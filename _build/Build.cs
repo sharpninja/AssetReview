@@ -28,8 +28,11 @@ class Build : NukeBuild
     AbsolutePath AssetReviewToolExecutablePath => DotNetGlobalToolsDirectory / (OperatingSystem.IsWindows() ? $"{AssetReviewToolCommandName}.exe" : AssetReviewToolCommandName);
     AbsolutePath VersionJsonPath => ArtifactsDirectory / "version.json";
 
-    /// <summary>NuGet package version (SemVer) from GitVersion.</summary>
-    string ResolvedPackageVersion => GitVersion().SemVer;
+    /// <summary>
+    /// NuGet package version from GitVersion <c>SemVer</c>.
+    /// NuGet rejects build metadata, so a trailing <c>+…</c> is removed.
+    /// </summary>
+    string ResolvedPackageVersion => ToNuGetVersion(GitVersion().SemVer);
 
     public static int Main(string[] args)
     {
@@ -90,8 +93,19 @@ class Build : NukeBuild
             DotNet(
                 $"pack \"{AssetReviewToolProject}\" --configuration {Configuration} --no-restore " +
                 $"--output \"{LocalToolPackagesDirectory}\" {VersionMsBuildArgs()}");
+            var packagePath = AssetReviewToolPackagePath();
+            if (!File.Exists(packagePath))
+            {
+                var found = Directory.Exists(LocalToolPackagesDirectory)
+                    ? string.Join(", ", Directory.GetFiles(LocalToolPackagesDirectory, "*.nupkg"))
+                    : "(directory missing)";
+                throw new FileNotFoundException(
+                    $"Pack did not produce the GitVersion package '{packagePath}'. Found: {found}",
+                    packagePath);
+            }
+
             WriteLocalToolNuGetConfig();
-            Console.WriteLine($"AssetReview tool package: {AssetReviewToolPackagePath()}");
+            Console.WriteLine($"AssetReview tool package: {packagePath} (GitVersion SemVer {ResolvedPackageVersion})");
         });
 
     Target DeployAssetReviewTool => _ => _
@@ -201,17 +215,20 @@ class Build : NukeBuild
         if (_gitVersion is not null)
             return _gitVersion;
 
+        // CalculateVersion runs before Restore, so the local tool must be restored here.
+        DotNet("tool restore");
+
         string json;
         try
         {
-            json = RunAndCapture("dotnet", "tool run dotnet-gitversion -- /output json");
+            json = RunAndCapture("dotnet", "tool run dotnet-gitversion -- /output json /verbosity quiet");
         }
         catch (InvalidOperationException)
         {
-            json = RunAndCapture("dotnet-gitversion", "/output json");
+            json = RunAndCapture("dotnet-gitversion", "/output json /verbosity quiet");
         }
 
-        _gitVersion = GitVersionInfo.Parse(json);
+        _gitVersion = GitVersionInfo.Parse(ExtractJson(json));
         Console.WriteLine(
             $"GitVersion: SemVer={_gitVersion.SemVer} MajorMinorPatch={_gitVersion.MajorMinorPatch} " +
             $"Assembly={_gitVersion.AssemblySemVer} Informational={_gitVersion.InformationalVersion}");
@@ -221,13 +238,15 @@ class Build : NukeBuild
     string VersionMsBuildArgs()
     {
         var gv = GitVersion();
+        var packageVersion = ToNuGetVersion(gv.SemVer);
         return
-            $"/p:Version={gv.SemVer} " +
-            $"/p:PackageVersion={gv.SemVer} " +
+            $"/p:Version={packageVersion} " +
+            $"/p:PackageVersion={packageVersion} " +
             $"/p:AssemblyVersion={gv.AssemblySemVer} " +
             $"/p:FileVersion={gv.AssemblySemFileVer} " +
             $"/p:InformationalVersion=\"{gv.InformationalVersion}\" " +
-            $"/p:ProductVersion={gv.MajorMinorPatch}";
+            $"/p:ProductVersion={gv.MajorMinorPatch} " +
+            "/p:IncludeSourceRevisionInInformationalVersion=false";
     }
 
     void WriteVersionJson(GitVersionInfo gv)
@@ -271,9 +290,12 @@ class Build : NukeBuild
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start {tool}.");
-        var standardOutput = process.StandardOutput.ReadToEnd();
-        var standardError = process.StandardError.ReadToEnd();
+        // Read both streams before waiting so a chatty GitVersion stderr cannot deadlock.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
+        var standardOutput = stdoutTask.GetAwaiter().GetResult();
+        var standardError = stderrTask.GetAwaiter().GetResult();
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException($"{tool} {arguments} failed with exit code {process.ExitCode}: {standardError}");
@@ -307,6 +329,30 @@ class Build : NukeBuild
         StartProcess(tool, arguments, RootDirectory).AssertZeroExitCode();
     }
 
+    static string ToNuGetVersion(string semVer)
+    {
+        var plus = semVer.IndexOf('+', StringComparison.Ordinal);
+        var version = plus >= 0 ? semVer[..plus] : semVer;
+        if (string.IsNullOrWhiteSpace(version))
+        {
+            throw new InvalidOperationException($"GitVersion SemVer '{semVer}' is not a NuGet package version.");
+        }
+
+        return version;
+    }
+
+    static string ExtractJson(string output)
+    {
+        var start = output.IndexOf('{');
+        var end = output.LastIndexOf('}');
+        if (start < 0 || end <= start)
+        {
+            throw new InvalidOperationException($"GitVersion did not return JSON. Output: {output}");
+        }
+
+        return output[start..(end + 1)];
+    }
+
     static bool IsHelpArgument(string argument)
     {
         return argument is "--help" or "-h" or "/?" or "help";
@@ -338,7 +384,7 @@ class Build : NukeBuild
         Console.WriteLine("  NUGET_AUTH_TOKEN                   Fallback API key if NUGET_API_KEY is unset");
         Console.WriteLine();
         Console.WriteLine("Versioning: packages and assemblies share GitVersion.yml");
-        Console.WriteLine("  (ContinuousDeployment, next-version 0.1.0).");
+        Console.WriteLine("  (ContinuousDeployment, next-version 0.2.0).");
         Console.WriteLine("  Run:  dotnet tool restore && dotnet tool run dotnet-gitversion");
     }
 }
