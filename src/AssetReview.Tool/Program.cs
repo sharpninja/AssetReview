@@ -813,7 +813,8 @@ internal static class Program
     .context-bar { min-height: 42px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px; color: var(--muted); font-size: 12px; }
     .context-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .preview { min-width: 0; min-height: 0; padding: 28px; background: var(--asset-bg); overflow: auto; display: flex; align-items: safe center; justify-content: safe center; }
-    .preview img { flex-shrink: 0; max-width: none; max-height: none; width: auto; height: auto; object-fit: none; image-rendering: pixelated; }
+    /* fill scales the bitmap into the zoomed element box. none keeps the intrinsic graphic centered in that box, so the pane shows empty background. */
+    .preview img { flex-shrink: 0; max-width: none; max-height: none; width: auto; height: auto; object-fit: fill; image-rendering: pixelated; }
     .anim-player { border-top: 1px solid var(--border); padding: 12px; display: grid; gap: 10px; background: var(--surface-2); }
     .anim-player.hidden { display: none; }
     .anim-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -1690,9 +1691,9 @@ internal static class Program
       document.documentElement.style.setProperty('--asset-bg', selectedColor.hex);
       if (zoomSlider) zoomSlider.value = String(zoom);
       if (zoomValue) zoomValue.textContent = `${Math.round(zoom * 100)}%`;
-      if (detailImage && detailImage.naturalWidth > 0) {
+      if (detailImage && detailImage.naturalWidth > 0 && detailImage.naturalHeight > 0) {
         detailImage.style.width = `${Math.round(detailImage.naturalWidth * zoom)}px`;
-        detailImage.style.height = 'auto';
+        detailImage.style.height = `${Math.round(detailImage.naturalHeight * zoom)}px`;
       }
       if (palette) {
         [...palette.children].forEach((button, index) => button.classList.toggle('active', c64Palette[index] === selectedColor));
