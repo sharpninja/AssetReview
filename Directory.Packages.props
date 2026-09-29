@@ -11,22 +11,14 @@
     <PackageVersion Include="Avalonia.Desktop" Version="12.0.5" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.0.5" />
     <PackageVersion Include="GitVersion.MsBuild" Version="6.8.2" />
-<<<<<<< HEAD
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-    <PackageVersion Include="Microsoft.Playwright" Version="1.63.0" />
-=======
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
->>>>>>> origin/main
+    <PackageVersion Include="Microsoft.Playwright" Version="1.63.0" />
     <PackageVersion Include="Nuke.Common" Version="10.1.0" />
     <PackageVersion Include="SharpNinja.aiUnit" Version="3.0.0" />
     <PackageVersion Include="NuGet.Packaging" Version="7.6.0" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.9" />
-<<<<<<< HEAD
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
-=======
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
->>>>>>> origin/main
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
   </ItemGroup>
 </Project>
