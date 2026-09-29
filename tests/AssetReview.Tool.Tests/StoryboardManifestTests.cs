@@ -34,6 +34,17 @@ public sealed class StoryboardManifestTests : IDisposable
     }
 
     [Fact]
+    public void Preview_zoom_scales_image_content_into_the_element_box()
+    {
+        // object-fit:none leaves the graphic at its intrinsic size, centered in the
+        // zoomed box, so the storyboard pane shows empty background above an SVG.
+        Assert.Contains(".preview img { flex-shrink: 0; max-width: none; max-height: none; width: auto; height: auto; object-fit: fill; image-rendering: pixelated; }", Program.Html, StringComparison.Ordinal);
+        Assert.DoesNotContain("object-fit: none", Program.Html, StringComparison.Ordinal);
+        Assert.Contains("detailImage.style.width = `${Math.round(detailImage.naturalWidth * zoom)}px`", Program.Html, StringComparison.Ordinal);
+        Assert.Contains("detailImage.style.height = `${Math.round(detailImage.naturalHeight * zoom)}px`", Program.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parse_reads_named_sequences_in_order_and_ignores_comments_and_fences()
     {
         IReadOnlyList<RawStoryboard> sequences = StoryboardManifest.Parse("""
