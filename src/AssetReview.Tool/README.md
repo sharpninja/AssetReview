@@ -18,7 +18,7 @@ Feedback is written as JSON Lines to `.asset-review/feedback.jsonl` by default.
 Each line records the asset path, decision, comment, preview context, and UTC timestamp.
 
 The detail view previews assets over a selectable C64 palette background and supports
-zoom through the slider or mouse wheel over the preview.
+zoom through the slider or Ctrl+mouse wheel over the preview (plain wheel scrolls when the image overflows).
 
 Use **Reload All** to rescan the asset root and refresh image URLs after regenerating PNG/SVG files.
 Use **Clear Reviews** to remove non-approved review contents from the feedback file while keeping

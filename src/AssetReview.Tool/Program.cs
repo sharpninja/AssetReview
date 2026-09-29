@@ -792,11 +792,11 @@ internal static class Program
     .palette { display: grid; grid-template-columns: repeat(8, 22px); gap: 5px; align-items: center; }
     .swatch { width: 22px; height: 22px; border: 1px solid rgba(0,0,0,.28); border-radius: 5px; cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.24); }
     .swatch.active { outline: 2px solid var(--text); outline-offset: 2px; }
-    .stage { min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+    .stage { min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
     .context-bar { min-height: 42px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px; color: var(--muted); font-size: 12px; }
     .context-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .preview { min-height: 0; display: grid; place-items: safe center; padding: 28px; background: var(--asset-bg); overflow: auto; }
-    .preview img { max-width: none; max-height: none; object-fit: contain; image-rendering: pixelated; }
+    .preview { min-width: 0; min-height: 0; padding: 28px; background: var(--asset-bg); overflow: auto; display: flex; align-items: safe center; justify-content: safe center; }
+    .preview img { flex-shrink: 0; max-width: none; max-height: none; width: auto; height: auto; object-fit: none; image-rendering: pixelated; }
     .anim-player { border-top: 1px solid var(--border); padding: 12px; display: grid; gap: 10px; background: var(--surface-2); }
     .anim-player.hidden { display: none; }
     .anim-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -1377,6 +1377,8 @@ internal static class Program
     detailImage.onload = applyPreviewSettings;
     preview.addEventListener('wheel', e => {
       if (detailView.classList.contains('hidden')) return;
+      // Ctrl/Meta+wheel zooms; plain wheel scrolls when the image overflows.
+      if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       setZoom(zoom + (e.deltaY < 0 ? 0.25 : -0.25));
     }, { passive: false });
