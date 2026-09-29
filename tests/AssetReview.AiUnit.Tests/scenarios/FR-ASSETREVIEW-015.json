@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-015",
+  "kind": "FR",
+  "title": "Light and dark theme",
+  "text": "The page applies light and dark themes from the theme query and from assetReviewSetTheme, which the embedded host calls.",
+  "source": "AssetReviewWindow"
+}

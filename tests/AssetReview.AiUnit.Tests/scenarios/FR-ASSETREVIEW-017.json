@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-017",
+  "kind": "FR",
+  "title": "Detail navigation",
+  "text": "Next, previous, and back navigation move through the current asset list and return to the grid.",
+  "source": "Detail navigation buttons"
+}

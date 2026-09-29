@@ -797,7 +797,7 @@ internal static class Program
     .status.approved { color: var(--approve); border-color: color-mix(in srgb, var(--approve) 35%, transparent); background: color-mix(in srgb, var(--approve) 8%, transparent); }
     .status.refinement { color: var(--refine); border-color: color-mix(in srgb, var(--refine) 35%, transparent); background: color-mix(in srgb, var(--refine) 10%, transparent); }
     .detail { height: calc(100vh - 62px); display: grid; grid-template-columns: minmax(0, 1fr) 360px; min-width: 0; }
-    .stage-wrap { min-width: 0; padding: 22px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; }
+    .stage-wrap { min-width: 0; min-height: 0; padding: 22px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; }
     .detail-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
     .icon-row { display: flex; gap: 8px; align-items: center; }
     .icon-button { width: 38px; height: 38px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); display: grid; place-items: center; cursor: pointer; }

@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-002",
+  "kind": "FR",
+  "title": "JSONL feedback record",
+  "text": "Feedback is appended as JSON Lines recording the asset path, decision, comment, preview context, and a UTC timestamp.",
+  "source": "README.md (Feedback)"
+}

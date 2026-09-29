@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-006",
+  "kind": "FR",
+  "title": "Clear non-approved reviews",
+  "text": "Clear Reviews removes non-approved feedback and keeps the current approved decisions.",
+  "source": "README.md (Clear Reviews)"
+}

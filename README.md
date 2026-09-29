@@ -84,9 +84,25 @@ On Unix: `./build.sh` with the same targets.
 | Target | Purpose |
 |--------|---------|
 | `Compile` | Restore + build `AssetReview.sln` (default) |
+| `Test` | Build, then run the SharpNinja.aiUnit requirement tests |
 | `PackAssetReviewTool` | Pack `SharpNinja.AssetReview.Tool` nupkg under `artifacts/nuke/local-packages` |
 | `DeployAssetReviewTool` | Pack, then uninstall-if-present and `dotnet tool install --global` from the local feed |
 | `PublishToNuGet` | Pack, then `dotnet nuget push` to nuget.org (or `--nuget-source`) |
+
+## Tests
+
+Requirement catalog: [`docs/requirements/Asset-Review-Requirements.md`](docs/requirements/Asset-Review-Requirements.md).
+
+SharpNinja.aiUnit tests in `tests/AssetReview.AiUnit.Tests` launch `asset-review` and drive the review page for each captured requirement. Screenshots are written to `artifacts/aiunit/asset-review/<REQUIREMENT-ID>.png` (override with `ASSET_REVIEW_SCREENSHOT_DIR`).
+
+```powershell
+dotnet test AssetReview.sln
+./build.sh Test
+```
+
+The suite uses headless Chromium (`ASSET_REVIEW_BROWSER` or `CHROME_PATH`, otherwise `google-chrome` on `PATH`). It does not need a display: UI tests pass `--server-only` and open the same page the embedded Avalonia host loads. The default `--embedded` window is not started here.
+
+`[AiTheory]` screenshot audits call the configured frontier strategy and are skipped unless that strategy resolves (set an API key; see `appsettings.aiunit.json`) and `ASSET_REVIEW_VISUAL_AUDIT=true`.
 
 ### Publish to NuGet
 

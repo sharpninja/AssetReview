@@ -1,0 +1,7 @@
+{
+  "id": "TR-ASSETREVIEW-001",
+  "kind": "TR",
+  "title": "Reject unknown decisions",
+  "text": "Feedback decisions other than approved or refinement are rejected.",
+  "source": "POST /api/feedback"
+}

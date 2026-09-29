@@ -1,0 +1,7 @@
+{
+  "id": "TR-ASSETREVIEW-003",
+  "kind": "TR",
+  "title": "Skip non-review paths",
+  "text": "Manifest generation and the review index skip non-image files and debug, screenshot, crawl-shot, and test-output paths, while still listing artifacts/art-approval.",
+  "source": "EnumerateAssets and IsExcludedDebugAssetPath"
+}

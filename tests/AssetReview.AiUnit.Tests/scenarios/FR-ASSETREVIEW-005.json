@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-005",
+  "kind": "FR",
+  "title": "Reload All",
+  "text": "Reload All rescans the asset root and shows files added after launch.",
+  "source": "README.md (Reload All)"
+}

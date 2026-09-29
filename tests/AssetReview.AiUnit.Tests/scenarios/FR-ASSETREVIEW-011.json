@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-011",
+  "kind": "FR",
+  "title": "In-flight storyboard sequences",
+  "text": "Hero and monster combat folders expose storyboard sequences that can play in flight, step a frame, and switch sequence.",
+  "source": "CombatAnimationSets and the detail animation player"
+}

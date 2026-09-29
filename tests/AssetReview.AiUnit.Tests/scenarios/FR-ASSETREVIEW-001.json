@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-001",
+  "kind": "FR",
+  "title": "PNG and SVG review grid",
+  "text": "The review app lists PNG and SVG files from the asset root under the configured title.",
+  "source": "README.md (Tool)"
+}
