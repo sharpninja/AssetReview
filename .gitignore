@@ -1,4 +1,4 @@
-﻿# .NET gitignore
+# .NET gitignore
 
 # Build output
 [Bb]in/
@@ -63,3 +63,12 @@ coverage/
 
 # Local review feedback (runtime)
 .asset-review/
+
+AGENTS-README-FIRST.yaml
+.mcpServer/
+cache/
+
+mcp.db
+
+# NUKE transient logs
+.nuke/temp/

@@ -1,4 +1,4 @@
-﻿# AssetReview
+# AssetReview
 
 Standalone local asset and wireframe approval review tool for PNG and SVG folders.
 
@@ -25,11 +25,53 @@ Use **Reload All** to rescan the asset root and refresh image URLs after regener
 Use **Clear Reviews** to remove non-approved review contents from the feedback file while keeping
 the current approved decisions.
 
-## Build
+### Generate a review manifest
+
+Scan the current directory (or `--asset-root`) for supported PNG/SVG media and write `_manifest.md` in the format the app expects, then exit:
 
 ```powershell
-dotnet build AssetReview.sln
-dotnet pack src/AssetReview.Tool/AssetReview.Tool.csproj
+asset-review --generate-manifest
+asset-review --generate-manifest --asset-root path\to\assets
+```
+
+The generated file lists each asset as a backtick-wrapped relative path (e.g. `` `subdir/icon.png` ``) so subsequent `asset-review` runs prefer the manifest over a full directory scan.
+
+## Build (Nuke)
+
+```powershell
+.\build.ps1                  # default: Compile
+.\build.ps1 PackAssetReviewTool
+.\build.ps1 DeployAssetReviewTool
+.\build.ps1 PublishToNuGet
+.\build.ps1 --help
+```
+
+On Unix: `./build.sh` with the same targets.
+
+| Target | Purpose |
+|--------|---------|
+| `Compile` | Restore + build `AssetReview.sln` (default) |
+| `PackAssetReviewTool` | Pack `SharpNinja.AssetReview.Tool` nupkg under `artifacts/nuke/local-packages` |
+| `DeployAssetReviewTool` | Pack, then uninstall-if-present and `dotnet tool install --global` from the local feed |
+| `PublishToNuGet` | Pack, then `dotnet nuget push` to nuget.org (or `--nuget-source`) |
+
+### Publish to NuGet
+
+Set an API key in the environment (never hardcode it):
+
+- **`NUGET_API_KEY`** (preferred)
+- `NUGET_AUTH_TOKEN` (fallback if `NUGET_API_KEY` is unset)
+
+```powershell
+$env:NUGET_API_KEY = "<your-nuget.org-key>"
+.\build.ps1 PublishToNuGet
+# optional alternate feed:
+.\build.ps1 PublishToNuGet --nuget-source https://api.nuget.org/v3/index.json
 ```
 
 Versioning is driven by GitVersion (`GitVersion.yml`, next-version `0.1.0`, ContinuousDeployment on `main`/`master`).
+
+```powershell
+dotnet tool restore
+dotnet tool run dotnet-gitversion
+```
