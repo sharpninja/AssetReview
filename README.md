@@ -61,16 +61,13 @@ A sequence is an ATX heading (`##` through `######`) whose text starts with `Seq
 
 Frames listed only under a sequence are still part of the asset catalog, so single-asset review is unchanged. Opening a card reviews that asset and steps through the filtered asset list.
 
-### Sequence review
+### Review mode
 
-When the manifest defines sequences, each one appears as a chip above the asset grid and in the sidebar under **Storyboards**. Open a sequence to review it as one unit:
+The toolbar **Review** control switches **Assets** and **Storyboards**.
 
-- Previous/Next and the arrow keys move between frames and stay inside that sequence.
-- The filmstrip jumps to a frame and shows which frames are approved or marked for refinement.
-- **Approve** and **Request refinement** still apply to the current frame. Feedback stays one decision per asset.
-- Esc or **Back** returns to the asset grid.
+**Assets** is single-asset review. The sidebar lists folders and the grid lists files. Previous/next and the arrow keys follow the filtered asset list. Combat animation playback still runs when you open a combat asset this way.
 
-Combat animation playback still runs when a single combat asset is opened from the grid. Sequence review does not start that player, so arrow keys belong to the storyboard.
+**Storyboards** lists sequences instead of individual files. The status filter keeps sequences that are still open, fully approved, or marked for refinement. Opening a sequence reviews that sequence as one unit: previous/next and the arrow keys stay on its frames, and the filmstrip jumps to a frame. Approve and Request refinement still apply to the current frame. Esc or Back returns to the storyboard list. Switching **Review** leaves the open detail view and shows the list for the mode you picked.
 
 ## Build (Nuke)
 

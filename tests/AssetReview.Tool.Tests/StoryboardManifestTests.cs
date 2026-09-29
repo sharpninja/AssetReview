@@ -25,6 +25,15 @@ public sealed class StoryboardManifestTests : IDisposable
     }
 
     [Fact]
+    public void Review_ui_exposes_a_storyboard_mode_selector()
+    {
+        Assert.Contains("data-review-mode=\"assets\"", Program.Html, StringComparison.Ordinal);
+        Assert.Contains("data-review-mode=\"storyboards\"", Program.Html, StringComparison.Ordinal);
+        Assert.Contains("aria-label=\"Review mode\"", Program.Html, StringComparison.Ordinal);
+        Assert.Contains("function setReviewMode", Program.Html, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parse_reads_named_sequences_in_order_and_ignores_comments_and_fences()
     {
         IReadOnlyList<RawStoryboard> sequences = StoryboardManifest.Parse("""

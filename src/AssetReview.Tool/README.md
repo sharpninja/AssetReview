@@ -36,9 +36,13 @@ Group ordered frames with an ATX heading and backtick paths relative to the mani
 
 HTML comments and fenced code blocks are ignored when reading sequences. Missing files are skipped. Repeated paths are kept so a hold frame can appear twice. Assets remain individually reviewable.
 
-### Sequence review
+### Review mode
 
-Defined sequences show up as chips on the asset grid and under **Storyboards** in the sidebar. Opening one reviews that sequence as a unit: previous/next and the arrow keys move only within its frames, and the filmstrip jumps directly to a frame. Approve and Request refinement still record a decision for the current frame. Esc or Back leaves sequence review and returns to the grid. Single-asset review, including combat animation playback, is unchanged when a card is opened from the grid.
+The toolbar **Review** control chooses **Assets** or **Storyboards**.
+
+**Assets** reviews one file at a time. Previous/next follows the filtered asset list, and combat animation playback still runs for a combat asset opened from that grid.
+
+**Storyboards** shows sequences instead of individual files. The status filter keeps sequences that are open, fully approved, or marked for refinement. Opening one reviews the whole sequence: previous/next and the arrow keys stay on its frames. Approve and Request refinement still record a decision for the current frame. Esc or Back returns to the storyboard list. Switching **Review** leaves the current detail view and shows that mode's list.
 
 Feedback is written as JSON Lines to `.asset-review/feedback.jsonl` by default.
 Each line records the asset path, decision, comment, preview context, and UTC timestamp.
