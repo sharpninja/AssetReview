@@ -2,10 +2,14 @@
   <!--
     Solution-wide versioning: every assembly and packable project uses GitVersion.
     - GitVersion.MsBuild: IDE / plain `dotnet build` (reads GitVersion.yml).
+    - Nuke pack/deploy/publish pass the same GitVersion SemVer as Version and PackageVersion.
   -->
   <PropertyGroup>
     <GitVersion_NoFetchEnabled>true</GitVersion_NoFetchEnabled>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <!-- GitVersion already puts the commit in InformationalVersion. Leaving the SDK default
+         on appends SourceRevisionId a second time (…Sha.<sha>.<sha>). -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(MSBuildProjectName)' != '_build'">

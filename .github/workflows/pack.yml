@@ -1,0 +1,44 @@
+name: Pack
+
+"on":
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pack:
+    name: Pack with GitVersion
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Pack AssetReview tool
+        run: bash ./build.sh PackAssetReviewTool
+
+      - name: Package version matches GitVersion SemVer
+        run: |
+          set -euo pipefail
+          dotnet tool restore
+          semver="$(dotnet tool run dotnet-gitversion -- /output json /showvariable SemVer /verbosity quiet | tr -d '\r')"
+          case "$semver" in
+            *+*) semver="${semver%%+*}" ;;
+          esac
+          if [[ -z "$semver" ]]; then
+            echo "GitVersion did not return SemVer."
+            exit 1
+          fi
+          pkg="artifacts/nuke/local-packages/SharpNinja.AssetReview.Tool.${semver}.nupkg"
+          if [[ ! -f "$pkg" ]]; then
+            echo "Expected nupkg at GitVersion SemVer: $pkg"
+            ls -la artifacts/nuke/local-packages || true
+            exit 1
+          fi
+          echo "Packed SharpNinja.AssetReview.Tool ${semver} from GitVersion."
