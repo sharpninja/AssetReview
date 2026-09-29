@@ -69,7 +69,7 @@ $env:NUGET_API_KEY = "<your-nuget.org-key>"
 .\build.ps1 PublishToNuGet --nuget-source https://api.nuget.org/v3/index.json
 ```
 
-Versioning is driven by GitVersion (`GitVersion.yml`, next-version `0.1.0`, ContinuousDeployment on `main`/`master`). Nuke `CalculateVersion` runs `dotnet-gitversion` and passes that SemVer into pack, deploy, and publish. On `main`, Continuous Deployment keeps the same SemVer until a git tag; the package version is that SemVer, not a value hardcoded in the project file.
+Versioning is driven by GitVersion (`GitVersion.yml`, next-version `0.2.0`, ContinuousDeployment on `main`/`master`). Nuke `CalculateVersion` runs `dotnet-gitversion` and passes that SemVer into pack, deploy, and publish. On `main`, Continuous Deployment keeps the same SemVer until a git tag; the package version is that SemVer, not a value hardcoded in the project file.
 
 ```powershell
 dotnet tool restore

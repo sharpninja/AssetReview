@@ -375,7 +375,7 @@ class Build : NukeBuild
         Console.WriteLine("  NUGET_AUTH_TOKEN                   Fallback API key if NUGET_API_KEY is unset");
         Console.WriteLine();
         Console.WriteLine("Versioning: packages and assemblies share GitVersion.yml");
-        Console.WriteLine("  (ContinuousDeployment, next-version 0.1.0).");
+        Console.WriteLine("  (ContinuousDeployment, next-version 0.2.0).");
         Console.WriteLine("  Run:  dotnet tool restore && dotnet tool run dotnet-gitversion");
     }
 }
