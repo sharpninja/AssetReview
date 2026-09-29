@@ -14,6 +14,36 @@ asset-review --generate-manifest
 
 Scans the current directory (or `--asset-root`) for `.png` / `.svg` files and writes `_manifest.md` next to that root, then exits. Manifest entries use backtick-wrapped relative paths so the review app can load from the manifest instead of a full folder scan.
 
+The generator does not invent storyboard sequences. If `_manifest.md` already has `Sequence:` / `Storyboard:` sections, those sections are kept and the flat asset list is replaced with a fresh scan.
+
+### Storyboard sequences
+
+Group ordered frames with an ATX heading and backtick paths relative to the manifest file. The sequence continues until the next heading. `Sequence:` and `Storyboard:` are equivalent. `{#id}` optionally pins a stable id.
+
+```markdown
+## Storyboards
+
+### Sequence: Opening cinematic
+
+- `boards/opening/01.png`
+- `boards/opening/02.png`
+
+### Storyboard: Boss intro {#boss-intro}
+
+- `boards/boss/01.png`
+- `boards/boss/02.svg`
+```
+
+HTML comments and fenced code blocks are ignored when reading sequences. Missing files are skipped. Repeated paths are kept so a hold frame can appear twice. Assets remain individually reviewable.
+
+### Review mode
+
+The toolbar **Review** control chooses **Assets** or **Storyboards**.
+
+**Assets** reviews one file at a time. Previous/next follows the filtered asset list, and combat animation playback still runs for a combat asset opened from that grid.
+
+**Storyboards** shows sequences instead of individual files. The status filter keeps sequences that are open, fully approved, or marked for refinement. Opening one reviews the whole sequence: previous/next and the arrow keys stay on its frames. Approve and Request refinement still record a decision for the current frame. Esc or Back returns to the storyboard list. Switching **Review** leaves the current detail view and shows that mode's list.
+
 Feedback is written as JSON Lines to `.asset-review/feedback.jsonl` by default.
 Each line records the asset path, decision, comment, preview context, and UTC timestamp.
 

@@ -36,6 +36,39 @@ asset-review --generate-manifest --asset-root path\to\assets
 
 The generated file lists each asset as a backtick-wrapped relative path (e.g. `` `subdir/icon.png` ``) so subsequent `asset-review` runs prefer the manifest over a full directory scan.
 
+### Storyboard sequences
+
+A manifest can group assets into named, ordered storyboard sequences. Sequences are explicit. `--generate-manifest` does not infer them from filenames or folders. Re-running `--generate-manifest` refreshes the flat asset list and keeps sequence sections already in `_manifest.md`.
+
+A sequence is an ATX heading (`##` through `######`) whose text starts with `Sequence:` or `Storyboard:`. Frame paths use the same backtick syntax as the asset list, in order, and are relative to the manifest file. The sequence runs until the next heading.
+
+```markdown
+## Storyboards
+
+### Sequence: Opening cinematic
+
+- `boards/opening/01.png`
+- `boards/opening/02.png`
+- `boards/opening/03.png`
+
+### Storyboard: Boss intro {#boss-intro}
+
+- `boards/boss/01.png`
+- `boards/boss/02.svg`
+```
+
+`{#id}` is an optional stable id. Without it, the app derives an id from the name. Listing a path twice keeps a hold frame. Missing files are skipped, and a sequence with no readable frames is left out of the UI. Headings inside HTML comments or fenced code blocks are not sequences.
+
+Frames listed only under a sequence are still part of the asset catalog, so single-asset review is unchanged. Opening a card reviews that asset and steps through the filtered asset list.
+
+### Review mode
+
+The toolbar **Review** control switches **Assets** and **Storyboards**.
+
+**Assets** is single-asset review. The sidebar lists folders and the grid lists files. Previous/next and the arrow keys follow the filtered asset list. Combat animation playback still runs when you open a combat asset this way.
+
+**Storyboards** lists sequences instead of individual files. The status filter keeps sequences that are still open, fully approved, or marked for refinement. Opening a sequence reviews that sequence as one unit: previous/next and the arrow keys stay on its frames, and the filmstrip jumps to a frame. Approve and Request refinement still apply to the current frame. Esc or Back returns to the storyboard list. Switching **Review** leaves the open detail view and shows the list for the mode you picked.
+
 ## Build (Nuke)
 
 ```powershell
