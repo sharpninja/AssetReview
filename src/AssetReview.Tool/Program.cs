@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("BBCrawler.Tooling.Tests")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("AssetReview.Tool.Tests")]
 
 namespace SharpNinja.AssetReview.Tool;
 
@@ -73,7 +74,8 @@ internal static class Program
 
     /// <summary>
     /// Scan asset root (defaults to CWD) for PNG/SVG and write <c>_manifest.md</c>, then exit.
-    /// Paths are backtick-wrapped relative paths so <see cref="ExtractManifestAssetPaths"/> can read them.
+    /// Paths are backtick-wrapped relative paths so <see cref="StoryboardManifest.ExtractAssetPaths"/> can read them.
+    /// Storyboard sequences are not inferred. Sequence sections already in the file are preserved.
     /// </summary>
     internal static int GenerateManifest(ReviewOptions options)
     {
@@ -83,6 +85,10 @@ internal static class Program
             .ToArray();
 
         string outputPath = Path.Combine(options.AssetRoot, "_manifest.md");
+        IReadOnlyList<RawStoryboard> preserved = File.Exists(outputPath)
+            ? StoryboardManifest.Parse(File.ReadAllText(outputPath))
+            : [];
+
         var sb = new StringBuilder();
         sb.AppendLine("# Asset Review Manifest");
         sb.AppendLine();
@@ -94,8 +100,15 @@ internal static class Program
             sb.AppendLine($"- `{relative}`");
         }
 
+        StoryboardManifest.AppendSequences(sb, preserved);
+        sb.AppendLine();
+        sb.AppendLine("> Storyboard sequences are optional and are not inferred. Add a heading like \"### Sequence: Name\" and list ordered frame paths beneath it. Re-running --generate-manifest keeps those sections.");
+        sb.AppendLine();
+
         File.WriteAllText(outputPath, sb.ToString());
-        Console.WriteLine($"Wrote {assets.Length} asset(s) to {outputPath}");
+        Console.WriteLine(preserved.Count == 0
+            ? $"Wrote {assets.Length} asset(s) to {outputPath}"
+            : $"Wrote {assets.Length} asset(s) and preserved {preserved.Count} storyboard sequence(s) to {outputPath}");
         return 0;
     }
 
@@ -185,6 +198,9 @@ internal static class Program
         Console.WriteLine($"Feedback asset root: {options.FeedbackAssetRoot}");
         if (options.ManifestFiles.Length > 0)
             Console.WriteLine($"Manifest files: {string.Join(", ", options.ManifestFiles)}");
+        int storyboardCount = StoryboardManifest.Load(options, SelectManifestFilesForIndex(options)).Count;
+        if (storyboardCount > 0)
+            Console.WriteLine($"Storyboard sequences: {storyboardCount}");
         Console.WriteLine($"Launch mode: {options.LaunchMode}");
     }
 
@@ -234,7 +250,8 @@ internal static class Program
             .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return new AssetIndex(options.Workspace, options.AssetRoot, options.FeedbackFile, options.FeedbackAssetRoot, manifestFiles, assets, folders);
+        StoryboardSequence[] sequences = StoryboardManifest.Load(options, manifestFiles).ToArray();
+        return new AssetIndex(options.Workspace, options.AssetRoot, options.FeedbackFile, options.FeedbackAssetRoot, manifestFiles, assets, folders, sequences);
     }
 
     internal static IReadOnlyList<CharacterAnimationSet> BuildAnimationSets(ReviewOptions options)
@@ -332,7 +349,7 @@ internal static class Program
             }
 
             foreach (string line in lines)
-            foreach (string assetPath in ExtractManifestAssetPaths(line))
+            foreach (string assetPath in StoryboardManifest.ExtractAssetPaths(line))
             {
                 string absolute = Path.GetFullPath(Path.Combine(manifestRoot, NormalizeRelativePath(assetPath)));
                 if (!IsInside(options.AssetRoot, absolute) ||
@@ -345,31 +362,6 @@ internal static class Program
 
                 yield return absolute;
             }
-        }
-    }
-
-    private static IEnumerable<string> ExtractManifestAssetPaths(string line)
-    {
-        int start = 0;
-        while (start < line.Length)
-        {
-            int open = line.IndexOf('`', start);
-            if (open < 0)
-                yield break;
-
-            int close = line.IndexOf('`', open + 1);
-            if (close < 0)
-                yield break;
-
-            string value = line[(open + 1)..close].Trim();
-            string ext = Path.GetExtension(value);
-            if (ext.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
-                ext.Equals(".svg", StringComparison.OrdinalIgnoreCase))
-            {
-                yield return value;
-            }
-
-            start = close + 1;
         }
     }
 
@@ -494,7 +486,7 @@ internal static class Program
         return fallbackAssetPath;
     }
 
-    private static string NormalizeRelativePath(string path) =>
+    internal static string NormalizeRelativePath(string path) =>
         path.Replace('\\', '/').TrimStart('/');
 
     internal static bool IsInside(string root, string candidate)
@@ -747,6 +739,28 @@ internal static class Program
     .meta { color: var(--muted); font-size: 12px; line-height: 1.45; word-break: break-word; }
     .search { width: 100%; border: 1px solid var(--border); border-radius: 7px; padding: 9px 10px; background: var(--surface); color: var(--text); }
     .folder-list { overflow: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 2px; }
+    .rail-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 2px 4px 0; }
+    .storyboard-section { display: flex; flex-direction: column; gap: 4px; }
+    .storyboard-list { overflow: auto; max-height: 240px; display: flex; flex-direction: column; gap: 4px; }
+    .sequence-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .sequence-chip { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 6px 10px 6px 12px; cursor: pointer; font-size: 13px; display: inline-flex; gap: 8px; align-items: center; }
+    .sequence-chip:hover { border-color: var(--accent); }
+    .sequence-chip span:first-child { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stage-head { min-width: 0; }
+    .sequence-bar { border-top: 1px solid var(--border); padding: 8px 12px 10px; display: grid; gap: 8px; background: var(--surface); }
+    .sequence-bar-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; min-width: 0; }
+    .sequence-bar-head span:first-child { font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sequence-strip { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; }
+    .seq-frame { position: relative; flex: 0 0 auto; width: 76px; height: 64px; border: 1px solid var(--border); border-radius: 6px; background: var(--asset-bg); padding: 0; cursor: pointer; overflow: hidden; }
+    .seq-frame img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block; }
+    .seq-frame.active { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
+    .seq-index { position: absolute; left: 3px; bottom: 3px; font-size: 10px; line-height: 1; padding: 2px 4px; border-radius: 4px; background: rgba(0,0,0,.62); color: #fff; }
+    .seq-frame .pip { position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 99px; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+    .seq-frame .pip.approved { background: var(--approve); }
+    .seq-frame .pip.refinement { background: var(--refine); }
+    .sequence-panel { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .review-panel .sequence-panel h2 { margin: 0; font-size: 15px; line-height: 1.3; }
+    .detail.sequence-mode .stage { border-color: var(--accent); }
     .folder { width: 100%; border: 0; background: transparent; text-align: left; padding: 8px 9px; border-radius: 7px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; cursor: pointer; }
     .folder:hover, .folder.active { background: var(--surface-2); }
     .folder span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -831,6 +845,11 @@ internal static class Program
       <div class="brand"><div class="brand-mark" id="brandMark"></div><div>Asset Review</div></div>
       <input id="search" class="search" placeholder="Search assets" />
       <div id="meta" class="meta"></div>
+      <div id="storyboardSection" class="storyboard-section hidden">
+        <div class="rail-label">Storyboards</div>
+        <div id="storyboards" class="storyboard-list"></div>
+      </div>
+      <div class="rail-label">Folders</div>
       <div id="folders" class="folder-list"></div>
     </aside>
     <main class="main">
@@ -848,7 +867,10 @@ internal static class Program
         </div>
       </header>
       <section class="content">
-        <div id="gridView" class="grid-view"><div id="assetGrid" class="asset-grid"></div></div>
+        <div id="gridView" class="grid-view">
+          <div id="sequenceChips" class="sequence-chips hidden"></div>
+          <div id="assetGrid" class="asset-grid"></div>
+        </div>
         <div id="detailView" class="detail hidden">
           <div class="stage-wrap">
             <div class="detail-nav">
@@ -868,7 +890,16 @@ internal static class Program
               </div>
             </div>
             <div class="stage">
-              <div class="context-bar"><span id="contextLabel"></span><span id="assetCount"></span></div>
+              <div class="stage-head">
+                <div class="context-bar"><span id="contextLabel"></span><span id="assetCount"></span></div>
+                <div id="sequenceBar" class="sequence-bar hidden">
+                  <div class="sequence-bar-head">
+                    <span id="sequenceBarTitle">Sequence</span>
+                    <span id="sequenceBarHint" class="badge">Left/Right or Up/Down move within this sequence. Esc returns to the grid.</span>
+                  </div>
+                  <div id="sequenceStrip" class="sequence-strip"></div>
+                </div>
+              </div>
               <div id="preview" class="preview"><img id="detailImage" alt="" /></div>
               <div id="animPlayer" class="anim-player hidden">
                 <div class="anim-row">
@@ -887,6 +918,11 @@ internal static class Program
             </div>
           </div>
           <aside class="review-panel">
+            <div id="sequencePanel" class="sequence-panel hidden">
+              <div class="rail-label">Storyboard sequence</div>
+              <h2 id="sequencePanelName"></h2>
+              <div id="sequencePanelMeta" class="detail-path"></div>
+            </div>
             <div>
               <h2 id="detailName"></h2>
               <div id="detailPath" class="detail-path"></div>
@@ -952,7 +988,7 @@ internal static class Program
       { name: 'Light Gray', hex: '#9f9f9f' }
     ];
 
-    let config, index, assets = [], folderRecords = [], selectedFolder = null, selected = -1, filter = 'all';
+    let config, index, assets = [], folderRecords = [], sequences = [], selectedFolder = null, selected = -1, filter = 'all';
     let assetVersion = Date.now();
     let selectedColor = c64Palette[0], zoom = 2;
     let animationSets = [];
@@ -961,6 +997,8 @@ internal static class Program
     let animFrameIndex = 0;
     let animPlaying = false;
     let animTimer = null;
+    let sequenceReview = null;
+    let sequenceFrameIndex = 0;
 
     async function init() {
       config = await (await fetch('/api/config')).json();
@@ -969,6 +1007,7 @@ internal static class Program
       renderPalette();
       applyPreviewSettings();
       renderFolders();
+      renderStoryboards();
       renderGrid();
     }
 
@@ -976,6 +1015,7 @@ internal static class Program
       index = await (await fetch('/api/assets', { cache: 'no-store' })).json();
       assets = index.assets;
       folderRecords = index.folders;
+      sequences = index.sequences || [];
       try {
         animationSets = await (await fetch('/api/animation-sets', { cache: 'no-store' })).json();
       } catch {
@@ -987,7 +1027,7 @@ internal static class Program
       const animLabel = animationSets.length > 0
         ? `<br>Animation sets: ${animationSets.length}`
         : '';
-      meta.innerHTML = `${assets.length} assets<br>${escapeHtml(index.assetRoot)}<br>${escapeHtml(manifestLabel)}${animLabel}<br>Feedback: ${escapeHtml(index.feedbackFile)}`;
+      meta.innerHTML = `${assets.length} assets<br>${escapeHtml(index.assetRoot)}<br>${escapeHtml(manifestLabel)}<br>Storyboards: ${sequences.length}${animLabel}<br>Feedback: ${escapeHtml(index.feedbackFile)}`;
     }
 
     function filteredAssets() {
@@ -1033,17 +1073,70 @@ internal static class Program
       }
     }
 
-    function openDetail(i) {
-      if (i < 0 || i >= assets.length) return;
-      selected = i;
-      gridView.classList.add('hidden');
-      detailView.classList.remove('hidden');
-      renderDetail();
+    function visibleSequences() {
+      const q = search.value.trim().toLowerCase();
+      if (!q) return sequences;
+      return sequences.filter(seq =>
+        seq.name.toLowerCase().includes(q) ||
+        String(seq.id || '').toLowerCase().includes(q) ||
+        (seq.frames || []).some(frame => frame.toLowerCase().includes(q)));
     }
 
-    function renderDetail() {
-      const asset = assets[selected];
-      if (!asset) return;
+    function sequenceStats(seq) {
+      let approved = 0, refinements = 0;
+      for (const path of seq.frames || []) {
+        const asset = assets.find(a => a.path === path);
+        if (asset?.decision === 'approved') approved++;
+        else if (asset?.decision === 'refinement') refinements++;
+      }
+      return { approved, refinements, total: (seq.frames || []).length };
+    }
+
+    function renderStoryboards() {
+      const list = visibleSequences();
+      const hasAny = sequences.length > 0;
+      const storyboardScroll = storyboards.scrollTop;
+      storyboardSection.classList.toggle('hidden', !hasAny);
+      sequenceChips.classList.toggle('hidden', !hasAny);
+      storyboards.innerHTML = '';
+      sequenceChips.innerHTML = '';
+      if (!hasAny) return;
+
+      if (list.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'meta';
+        empty.textContent = 'No matching sequences';
+        storyboards.appendChild(empty);
+      }
+
+      for (const seq of list) {
+        const stats = sequenceStats(seq);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'folder' + (sequenceReview && sequenceReview.id === seq.id ? ' active' : '');
+        btn.title = `${seq.name} (${stats.total} frames, approved/refinements/frames)`;
+        btn.innerHTML = `<span>${escapeHtml(seq.name)}</span><span class="badge">${stats.approved}/${stats.refinements}/${stats.total}</span>`;
+        btn.onclick = () => openSequence(seq);
+        storyboards.appendChild(btn);
+
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'sequence-chip';
+        chip.title = `Review sequence ${seq.name}`;
+        chip.innerHTML = `<span>${escapeHtml(seq.name)}</span><span class="badge">${stats.approved}/${stats.total}</span>`;
+        chip.onclick = () => openSequence(seq);
+        sequenceChips.appendChild(chip);
+      }
+      storyboards.scrollTop = storyboardScroll;
+    }
+
+    function hideSequenceChrome() {
+      sequenceBar.classList.add('hidden');
+      sequencePanel.classList.add('hidden');
+      detailView.classList.remove('sequence-mode');
+    }
+
+    function paintAsset(asset) {
       detailImage.src = assetUrl(asset.path);
       detailImage.alt = asset.name;
       detailName.textContent = asset.name;
@@ -1051,12 +1144,139 @@ internal static class Program
       detailStatus.textContent = asset.decision || 'Open';
       detailStatus.className = `status ${asset.decision || ''}`;
       comment.value = asset.comment || '';
-      contextLabel.textContent = `${asset.extension.toUpperCase()} on C64 ${selectedColor.name}`;
-        const filtered = filteredAssets();
-        const filteredIndex = filtered.findIndex(a => a.path === asset.path);
-        assetCount.textContent = filteredIndex >= 0
-          ? `${filteredIndex + 1} / ${filtered.length}`
-          : `${selected + 1} / ${assets.length}`;
+    }
+
+    function scrollActiveFrameIntoView() {
+      requestAnimationFrame(() => {
+        const active = sequenceStrip.querySelector('.seq-frame.active');
+        if (!active) return;
+        const stripRect = sequenceStrip.getBoundingClientRect();
+        const frameRect = active.getBoundingClientRect();
+        if (frameRect.left < stripRect.left) {
+          sequenceStrip.scrollLeft -= stripRect.left - frameRect.left + 8;
+        } else if (frameRect.right > stripRect.right) {
+          sequenceStrip.scrollLeft += frameRect.right - stripRect.right + 8;
+        }
+      });
+    }
+
+    function renderSequenceChrome() {
+      const frames = sequenceReview.frames || [];
+      const stats = sequenceStats(sequenceReview);
+      sequenceBar.classList.remove('hidden');
+      sequencePanel.classList.remove('hidden');
+      detailView.classList.add('sequence-mode');
+      sequenceBarTitle.textContent = sequenceReview.name;
+      sequenceBarHint.textContent = 'Left/Right or Up/Down move within this sequence. Esc returns to the grid.';
+      sequencePanelName.textContent = sequenceReview.name;
+      sequencePanelMeta.textContent = `Frame ${sequenceFrameIndex + 1} of ${frames.length} · ${stats.approved} approved · ${stats.refinements} refinement`;
+      sequenceStrip.innerHTML = '';
+      frames.forEach((framePath, index) => {
+        const asset = assets.find(a => a.path === framePath);
+        const decision = asset?.decision === 'approved' || asset?.decision === 'refinement' ? asset.decision : '';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'seq-frame' + (index === sequenceFrameIndex ? ' active' : '');
+        btn.title = framePath;
+        btn.setAttribute('aria-label', `Frame ${index + 1}: ${framePath}`);
+        if (index === sequenceFrameIndex) btn.setAttribute('aria-current', 'true');
+        const pip = decision ? `<span class="pip ${decision}"></span>` : '';
+        btn.innerHTML = `<img src="${assetUrl(framePath)}" alt=""><span class="seq-index">${index + 1}</span>${pip}`;
+        btn.onclick = () => showSequenceFrame(index);
+        sequenceStrip.appendChild(btn);
+      });
+      scrollActiveFrameIntoView();
+      renderStoryboards();
+    }
+
+    function showSequenceFrame(index) {
+      const frames = sequenceReview?.frames || [];
+      if (!frames.length) return;
+      sequenceFrameIndex = ((index % frames.length) + frames.length) % frames.length;
+      const framePath = frames[sequenceFrameIndex];
+      const match = assets.findIndex(a => a.path === framePath);
+      if (match >= 0) selected = match;
+      renderSequenceFrame();
+    }
+
+    function renderSequenceFrame() {
+      const frames = sequenceReview?.frames || [];
+      const framePath = frames[sequenceFrameIndex];
+      if (!framePath) return;
+      stopAnimationTimer();
+      activeAnimSet = null;
+      activeSequence = null;
+      animPlayer.classList.add('hidden');
+      prevBtn.title = 'Previous frame in sequence';
+      nextBtn.title = 'Next frame in sequence';
+      title.textContent = sequenceReview.name;
+      const asset = assets.find(a => a.path === framePath);
+      if (asset) {
+        selected = assets.indexOf(asset);
+        paintAsset(asset);
+      } else {
+        detailImage.src = assetUrl(framePath);
+        detailImage.alt = framePath.split('/').pop();
+        detailName.textContent = framePath.split('/').pop();
+        detailPath.textContent = framePath;
+        detailStatus.textContent = 'Missing';
+        detailStatus.className = 'status';
+        comment.value = '';
+      }
+      assetCount.textContent = `${sequenceFrameIndex + 1} / ${frames.length}`;
+      renderSequenceChrome();
+      applyPreviewSettings();
+    }
+
+    function navigateSequence(delta) {
+      const frames = sequenceReview?.frames || [];
+      if (!frames.length) return;
+      showSequenceFrame(sequenceFrameIndex + delta);
+    }
+
+    function openSequence(seq, focus) {
+      if (!seq || !(seq.frames || []).length) return;
+      let index = 0;
+      if (typeof focus === 'number' && focus >= 0 && focus < seq.frames.length) index = focus;
+      else if (typeof focus === 'string') {
+        const found = seq.frames.indexOf(focus);
+        if (found >= 0) index = found;
+      }
+      const same = sequenceReview && sequenceReview.id === seq.id && focus == null && !detailView.classList.contains('hidden');
+      if (same) return;
+      sequenceReview = seq;
+      gridView.classList.add('hidden');
+      detailView.classList.remove('hidden');
+      showSequenceFrame(index);
+    }
+
+    function openDetail(i) {
+      if (i < 0 || i >= assets.length) return;
+      sequenceReview = null;
+      selected = i;
+      gridView.classList.add('hidden');
+      detailView.classList.remove('hidden');
+      renderDetail();
+      renderStoryboards();
+    }
+
+    function renderDetail() {
+      if (sequenceReview) {
+        renderSequenceFrame();
+        return;
+      }
+      const asset = assets[selected];
+      if (!asset) return;
+      hideSequenceChrome();
+      prevBtn.title = 'Previous asset';
+      nextBtn.title = 'Next asset';
+      title.textContent = config?.title || 'Asset Review';
+      paintAsset(asset);
+      const filtered = filteredAssets();
+      const filteredIndex = filtered.findIndex(a => a.path === asset.path);
+      assetCount.textContent = filteredIndex >= 0
+        ? `${filteredIndex + 1} / ${filtered.length}`
+        : `${selected + 1} / ${assets.length}`;
       bindAnimationForAsset(asset);
       applyPreviewSettings();
     }
@@ -1223,6 +1443,8 @@ internal static class Program
     async function reloadAll() {
       const selectedPath = selected >= 0 && assets[selected] ? assets[selected].path : null;
       const wasDetail = !detailView.classList.contains('hidden');
+      const activeSequenceId = sequenceReview ? sequenceReview.id : null;
+      const activeFrameIndex = sequenceReview ? sequenceFrameIndex : 0;
       reloadBtn.disabled = true;
       reloadBtn.innerHTML = `${icons.reload}<span>Reloading</span>`;
       try {
@@ -1233,12 +1455,25 @@ internal static class Program
         }
 
         selected = selectedPath ? assets.findIndex(asset => asset.path === selectedPath) : -1;
-        if (selected < 0 && wasDetail && assets.length > 0) {
+        if (selected < 0 && wasDetail && assets.length > 0 && !activeSequenceId) {
           selected = 0;
         }
 
         renderFolders();
+        renderStoryboards();
         renderGrid();
+
+        const restoredSequence = activeSequenceId
+          ? sequences.find(seq => seq.id === activeSequenceId)
+          : null;
+        if (wasDetail && restoredSequence && (restoredSequence.frames || []).length) {
+          sequenceReview = null;
+          openSequence(restoredSequence, activeFrameIndex);
+          toast.textContent = `Reloaded ${assets.length} assets.`;
+          return;
+        }
+
+        sequenceReview = null;
         if (wasDetail && selected >= 0) {
           gridView.classList.add('hidden');
           detailView.classList.remove('hidden');
@@ -1246,6 +1481,8 @@ internal static class Program
         } else {
           detailView.classList.add('hidden');
           gridView.classList.remove('hidden');
+          hideSequenceChrome();
+          title.textContent = config?.title || 'Asset Review';
         }
 
         toast.textContent = `Reloaded ${assets.length} assets.`;
@@ -1285,6 +1522,13 @@ internal static class Program
     async function submit(decision) {
       const asset = assets[selected];
       if (!asset) return;
+      if (sequenceReview) {
+        const framePath = (sequenceReview.frames || [])[sequenceFrameIndex];
+        if (asset.path !== framePath) {
+          toast.textContent = 'This frame is not in the asset index.';
+          return;
+        }
+      }
       const body = { assetPath: asset.path, decision, comment: comment.value, context: reviewContext() };
       const response = await fetch('/api/feedback', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -1297,10 +1541,15 @@ internal static class Program
       toast.textContent = `Saved ${entry.decision} feedback.`;
       renderDetail();
       renderFolders();
+      renderStoryboards();
       renderGrid();
     }
 
     function navigate(delta) {
+      if (sequenceReview) {
+        navigateSequence(delta);
+        return;
+      }
       stopAnimationTimer();
       const list = filteredAssets();
       if (list.length === 0) return;
@@ -1350,13 +1599,22 @@ internal static class Program
       if (palette) {
         [...palette.children].forEach((button, index) => button.classList.toggle('active', c64Palette[index] === selectedColor));
       }
-      if (selected >= 0 && assets[selected]) {
+      if (sequenceReview) {
+        const framePath = (sequenceReview.frames || [])[sequenceFrameIndex] || '';
+        const ext = (framePath.split('.').pop() || '').toUpperCase();
+        contextLabel.textContent = `${sequenceReview.name} · ${ext} on C64 ${selectedColor.name}`;
+      } else if (selected >= 0 && assets[selected]) {
         contextLabel.textContent = `${assets[selected].extension.toUpperCase()} on C64 ${selectedColor.name}`;
       }
     }
 
     function reviewContext() {
-      return `background=${selectedColor.name}; zoom=${Math.round(zoom * 100)}%`;
+      let ctx = `background=${selectedColor.name}; zoom=${Math.round(zoom * 100)}%`;
+      if (sequenceReview) {
+        const frames = sequenceReview.frames || [];
+        ctx += `; sequence=${sequenceReview.name}; sequenceId=${sequenceReview.id}; frame=${sequenceFrameIndex + 1}/${frames.length}`;
+      }
+      return ctx;
     }
 
     function assetUrl(path) {
@@ -1367,7 +1625,10 @@ internal static class Program
       return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     }
 
-    search.oninput = renderGrid;
+    search.oninput = () => {
+      renderGrid();
+      renderStoryboards();
+    };
     document.querySelectorAll('[data-filter]').forEach(b => b.onclick = () => {
       filter = b.dataset.filter;
       document.querySelectorAll('[data-filter]').forEach(x => x.classList.toggle('active', x === b));
@@ -1384,9 +1645,15 @@ internal static class Program
     }, { passive: false });
     backBtn.onclick = () => {
       stopAnimationTimer();
+      sequenceReview = null;
+      hideSequenceChrome();
+      prevBtn.title = 'Previous asset';
+      nextBtn.title = 'Next asset';
+      title.textContent = config?.title || 'Asset Review';
       detailView.classList.add('hidden');
       gridView.classList.remove('hidden');
       renderGrid();
+      renderStoryboards();
     };
     reloadBtn.onclick = reloadAll;
     clearReviewsBtn.onclick = clearReviewsExceptApprovals;
@@ -1410,8 +1677,18 @@ internal static class Program
       if (e.key === 'ArrowUp') { e.preventDefault(); navigate(-1); return; }
       if (e.key === 'ArrowDown') { e.preventDefault(); navigate(1); return; }
       // Left/Right: step animation frame; always pause if currently playing.
-      if (e.key === 'ArrowLeft') { e.preventDefault(); stepAnimationFrame(-1); return; }
-      if (e.key === 'ArrowRight') { e.preventDefault(); stepAnimationFrame(1); return; }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (sequenceReview) navigate(-1);
+        else stepAnimationFrame(-1);
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (sequenceReview) navigate(1);
+        else stepAnimationFrame(1);
+        return;
+      }
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault();
         toggleAnimationPlayback();
@@ -1533,6 +1810,7 @@ internal sealed record ReviewOptions(
           --port <number>          Localhost port. Defaults to 5087.
           --title <text>           App title.
           --generate-manifest      Scan asset root for .png/.svg, write _manifest.md, and exit.
+                                   Does not infer storyboard sequences; existing Sequence sections are kept.
           --embedded               Launch the embedded Avalonia/WebView2 app (default).
           --no-open, --server-only Start the local server without opening a UI.
           --external-browser       Open the system browser instead of the embedded app.
@@ -1555,7 +1833,8 @@ internal sealed record AssetIndex(
     string FeedbackAssetRoot,
     string[] ManifestFiles,
     AssetRecord[] Assets,
-    FolderRecord[] Folders);
+    FolderRecord[] Folders,
+    StoryboardSequence[] Sequences);
 internal sealed record FolderRecord(string Path, int Count, int Approved, int Refinements);
 internal sealed record AssetRecord(string Path, string Folder, string Name, string Extension, long Bytes, string? Decision, string? Comment, DateTimeOffset? TimestampUtc);
 internal sealed record FeedbackRequest(string AssetPath, string Decision, string? Comment, string? Context);

@@ -36,6 +36,42 @@ asset-review --generate-manifest --asset-root path\to\assets
 
 The generated file lists each asset as a backtick-wrapped relative path (e.g. `` `subdir/icon.png` ``) so subsequent `asset-review` runs prefer the manifest over a full directory scan.
 
+### Storyboard sequences
+
+A manifest can group assets into named, ordered storyboard sequences. Sequences are explicit. `--generate-manifest` does not infer them from filenames or folders. Re-running `--generate-manifest` refreshes the flat asset list and keeps sequence sections already in `_manifest.md`.
+
+A sequence is an ATX heading (`##` through `######`) whose text starts with `Sequence:` or `Storyboard:`. Frame paths use the same backtick syntax as the asset list, in order, and are relative to the manifest file. The sequence runs until the next heading.
+
+```markdown
+## Storyboards
+
+### Sequence: Opening cinematic
+
+- `boards/opening/01.png`
+- `boards/opening/02.png`
+- `boards/opening/03.png`
+
+### Storyboard: Boss intro {#boss-intro}
+
+- `boards/boss/01.png`
+- `boards/boss/02.svg`
+```
+
+`{#id}` is an optional stable id. Without it, the app derives an id from the name. Listing a path twice keeps a hold frame. Missing files are skipped, and a sequence with no readable frames is left out of the UI. Headings inside HTML comments or fenced code blocks are not sequences.
+
+Frames listed only under a sequence are still part of the asset catalog, so single-asset review is unchanged. Opening a card reviews that asset and steps through the filtered asset list.
+
+### Sequence review
+
+When the manifest defines sequences, each one appears as a chip above the asset grid and in the sidebar under **Storyboards**. Open a sequence to review it as one unit:
+
+- Previous/Next and the arrow keys move between frames and stay inside that sequence.
+- The filmstrip jumps to a frame and shows which frames are approved or marked for refinement.
+- **Approve** and **Request refinement** still apply to the current frame. Feedback stays one decision per asset.
+- Esc or **Back** returns to the asset grid.
+
+Combat animation playback still runs when a single combat asset is opened from the grid. Sequence review does not start that player, so arrow keys belong to the storyboard.
+
 ## Build (Nuke)
 
 ```powershell
