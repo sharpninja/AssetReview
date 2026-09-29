@@ -73,6 +73,14 @@ class Build : NukeBuild
             DotNet($"build \"{SolutionFile}\" --configuration {Configuration} --no-restore --verbosity minimal {VersionMsBuildArgs()}");
         });
 
+    /// <summary>Run the solution test projects, including SharpNinja.aiUnit requirement drivers.</summary>
+    Target Test => _ => _
+        .DependsOn(Compile)
+        .Executes(() =>
+        {
+            DotNet($"test \"{SolutionFile}\" --configuration {Configuration} --no-build --verbosity minimal");
+        });
+
     Target PackAssetReviewTool => _ => _
         .DependsOn(CalculateVersion)
         .Executes(() =>
@@ -316,6 +324,7 @@ class Build : NukeBuild
         Console.WriteLine("  CalculateVersion             # GitVersion -> artifacts/nuke/version.json");
         Console.WriteLine("  Restore");
         Console.WriteLine("  Compile                      # default; assemblies use GitVersion");
+        Console.WriteLine("  Test                         # dotnet test (aiUnit requirement drivers)");
         Console.WriteLine("  PackAssetReviewTool          # nupkg version = SemVer");
         Console.WriteLine("  DeployAssetReviewTool        # uninstall-if-present + install --global from local feed");
         Console.WriteLine("  PublishToNuGet               # dotnet nuget push (requires NUGET_API_KEY)");

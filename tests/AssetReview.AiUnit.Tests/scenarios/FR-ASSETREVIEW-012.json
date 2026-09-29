@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-012",
+  "kind": "FR",
+  "title": "Version command",
+  "text": "--version prints the asset-review version and exits successfully.",
+  "source": "CLI --version"
+}

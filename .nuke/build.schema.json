@@ -30,7 +30,8 @@
         "DeployAssetReviewTool",
         "PackAssetReviewTool",
         "PublishToNuGet",
-        "Restore"
+        "Restore",
+        "Test"
       ]
     },
     "Verbosity": {

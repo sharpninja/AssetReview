@@ -1,0 +1,7 @@
+{
+  "id": "TR-ASSETREVIEW-002",
+  "kind": "TR",
+  "title": "Validate port",
+  "text": "A non-integer or out-of-range --port value exits with code 2 and an error on stderr.",
+  "source": "TryParsePort"
+}

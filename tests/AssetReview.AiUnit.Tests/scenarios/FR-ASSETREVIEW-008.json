@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-008",
+  "kind": "FR",
+  "title": "Prefer manifest over folder scan",
+  "text": "When _manifest.md lists assets, the review index uses that list instead of every image in the folder.",
+  "source": "README.md (manifest preference)"
+}

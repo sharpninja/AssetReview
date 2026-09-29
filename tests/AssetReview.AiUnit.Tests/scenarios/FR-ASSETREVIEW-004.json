@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-004",
+  "kind": "FR",
+  "title": "Zoom and scroll preview",
+  "text": "Zoom changes through the slider or Ctrl/Meta+mouse wheel, and a plain wheel scrolls the preview when the image overflows.",
+  "source": "src/AssetReview.Tool/README.md"
+}

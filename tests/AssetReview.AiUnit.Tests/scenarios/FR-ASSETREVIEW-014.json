@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-014",
+  "kind": "FR",
+  "title": "Reject path escape",
+  "text": "Asset and feedback routes reject paths that escape the asset root.",
+  "source": "Program.IsInside"
+}

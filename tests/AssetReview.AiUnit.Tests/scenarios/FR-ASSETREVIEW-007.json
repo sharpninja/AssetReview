@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-007",
+  "kind": "FR",
+  "title": "Generate review manifest",
+  "text": "--generate-manifest scans the asset root for PNG and SVG files, writes backtick-wrapped relative paths to _manifest.md, and exits.",
+  "source": "README.md (--generate-manifest)"
+}

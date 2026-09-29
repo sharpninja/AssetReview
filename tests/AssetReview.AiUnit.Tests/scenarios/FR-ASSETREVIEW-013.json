@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-013",
+  "kind": "FR",
+  "title": "Server-only launch",
+  "text": "--server-only serves the review UI without opening a desktop window and reports the URL and launch mode.",
+  "source": "CLI launch modes"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "FR-ASSETREVIEW-009",
+  "kind": "FR",
+  "title": "Search and status filters",
+  "text": "Search text and the All, Open, Approved, and Refine filters limit which assets are shown.",
+  "source": "Review page toolbar"
+}
