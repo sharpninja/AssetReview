@@ -1,0 +1,14 @@
+﻿<Project>
+  <!--
+    Solution-wide versioning: every assembly and packable project uses GitVersion.
+    - GitVersion.MsBuild: IDE / plain `dotnet build` (reads GitVersion.yml).
+  -->
+  <PropertyGroup>
+    <GitVersion_NoFetchEnabled>true</GitVersion_NoFetchEnabled>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' and '$(MSBuildProjectName)' != '_build'">
+    <PackageReference Include="GitVersion.MsBuild" PrivateAssets="All" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,38 @@
+﻿# AssetReview product versioning (GitVersion 6.x)
+# Extracted from BBCrawler. Continuous Deployment: same SemVer until a git tag
+# marks a production release; then the next line advances (see GitVersion CD mode).
+mode: ContinuousDeployment
+next-version: 0.1.0
+tag-prefix: '[vV]?'
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatch
+assembly-informational-format: '{InformationalVersion}'
+commit-message-incrementing: Enabled
+major-version-bump-message: '\+semver:\s?(breaking|major)'
+minor-version-bump-message: '\+semver:\s?(feature|minor)'
+patch-version-bump-message: '\+semver:\s?(fix|patch)'
+no-bump-message: '\+semver:\s?(none|skip)'
+branches:
+  main:
+    regex: ^master$|^main$
+    mode: ContinuousDeployment
+    label: ''
+    increment: Patch
+    prevent-increment:
+      of-merged-branch: true
+    is-main-branch: true
+  feature:
+    regex: ^features?[/-](?<BranchName>.+)
+    mode: ContinuousDeployment
+    label: '{BranchName}'
+    increment: Inherit
+  pull-request:
+    regex: ^(pull-requests|pull|pr)[/-](?<Number>\d*)
+    mode: ContinuousDeployment
+    label: PullRequest{Number}
+    increment: Inherit
+  unknown:
+    regex: (?<BranchName>.+)
+    mode: ContinuousDeployment
+    label: '{BranchName}'
+    increment: Inherit
