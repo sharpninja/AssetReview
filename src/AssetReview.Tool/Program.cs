@@ -76,6 +76,7 @@ internal static class Program
     /// Scan asset root (defaults to CWD) for PNG/SVG and write <c>_manifest.md</c>, then exit.
     /// Paths are backtick-wrapped relative paths so <see cref="StoryboardManifest.ExtractAssetPaths"/> can read them.
     /// Storyboard sequences are not inferred. Sequence sections already in the file are preserved.
+    /// 2026-11-23: FR-ASSETREVIEW-018, AC-roundtrip-and-legacy. Keep the generated note outside authored graph sections.
     /// </summary>
     internal static int GenerateManifest(ReviewOptions options)
     {
@@ -100,10 +101,10 @@ internal static class Program
             sb.AppendLine($"- `{relative}`");
         }
 
-        StoryboardManifest.AppendSequences(sb, preserved);
         sb.AppendLine();
         sb.AppendLine("> Storyboard sequences are optional and are not inferred. Add a heading like \"### Sequence: Name\" and list ordered frame paths beneath it. Re-running --generate-manifest keeps those sections.");
         sb.AppendLine();
+        StoryboardManifest.AppendSequences(sb, preserved);
 
         File.WriteAllText(outputPath, sb.ToString());
         Console.WriteLine(preserved.Count == 0
@@ -132,6 +133,8 @@ internal static class Program
 
         app.MapGet("/api/assets", () => Results.Json(BuildIndex(options)));
         app.MapGet("/api/animation-sets", () => Results.Json(BuildAnimationSets(options)));
+        app.MapGet("/api/storyboards/{id}/diagram", (string id, HttpContext context) =>
+            GetStoryboardDiagramAsync(options, id, context));
         app.MapPost("/api/feedback", async (FeedbackRequest request) =>
         {
             if (string.IsNullOrWhiteSpace(request.AssetPath))
@@ -178,6 +181,29 @@ internal static class Program
         });
 
         return app;
+    }
+
+    /// <summary>
+    /// Renders a validated storyboard as an SVG activity diagram.
+    /// 2026-11-23: FR-ASSETREVIEW-019, AC-complete-activity and AC-renderer-recovery expose the local renderer.
+    /// </summary>
+    private static async Task<IResult> GetStoryboardDiagramAsync(ReviewOptions options, string id, HttpContext context)
+    {
+        var sequence = StoryboardManifest.Load(options, SelectManifestFilesForIndex(options))
+            .FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (sequence is null)
+            return Results.NotFound();
+        if (sequence.Graph is { Diagnostics.Count: > 0 })
+            return Results.Text("Resolve the storyboard manifest errors to render the activity diagram.", statusCode: 422);
+
+        context.Response.Headers.CacheControl = "no-store";
+        string source = StoryboardActivityDiagram.CreateSource(sequence);
+        var (svg, error) = await StoryboardActivityDiagram.RenderAsync(source, context.RequestAborted);
+        if (svg is null)
+            return Results.Text(error, statusCode: 503);
+
+        context.Response.Headers.ContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'";
+        return Results.Content(svg, "image/svg+xml; charset=utf-8");
     }
 
     private static int RunEmbeddedHost(ReviewOptions options, string url)
@@ -764,6 +790,18 @@ internal static class Program
     .sequence-panel { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
     .review-panel .sequence-panel h2 { margin: 0; font-size: 15px; line-height: 1.3; }
     .detail.sequence-mode .stage { border-color: var(--accent); }
+    .storyboard-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 12px; }
+    .storyboard-transitions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .storyboard-transitions button { border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; background: var(--surface); cursor: pointer; }
+    .storyboard-transitions button:hover { border-color: var(--accent); }
+    .storyboard-transitions button[data-kind="loop"] { border-style: dashed; }
+    #storyboardLoopStatus { color: var(--muted); font-size: 12px; }
+    .storyboard-diagnostics { margin: 0; padding-left: 18px; color: var(--refine); font-size: 12px; overflow-wrap: anywhere; }
+    .storyboard-diagram { min-height: 0; overflow: auto; padding: 16px; }
+    .storyboard-diagram img { display: block; margin-inline: auto; background: #fff; border-radius: 6px; }
+    .storyboard-diagram img.hidden { display: none; }
+    .storyboard-diagram p { margin: 0; color: var(--muted); }
+    .icon-button:disabled, .action:disabled { opacity: .45; cursor: default; }
     .folder { width: 100%; border: 0; background: transparent; text-align: left; padding: 8px 9px; border-radius: 7px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; cursor: pointer; }
     .folder:hover, .folder.active { background: var(--surface-2); }
     .folder span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -891,6 +929,7 @@ internal static class Program
                 <button id="backBtn" class="icon-button" title="Back to grid"></button>
                 <button id="prevBtn" class="icon-button" title="Previous asset"></button>
                 <button id="nextBtn" class="icon-button" title="Next asset"></button>
+                <button id="storyboardRestartBtn" type="button" class="icon-button hidden" title="Restart storyboard" aria-label="Restart storyboard"></button>
               </div>
               <div class="detail-controls">
                 <div class="zoom-control">
@@ -911,9 +950,21 @@ internal static class Program
                     <span id="sequenceBarHint" class="badge">Left/Right or Up/Down move within this sequence. Esc returns to the storyboard list.</span>
                   </div>
                   <div id="sequenceStrip" class="sequence-strip"></div>
+                  <div class="storyboard-controls">
+                    <div class="segmented" role="group" aria-label="Storyboard view">
+                      <button id="storyboardDiagramBtn" type="button" aria-pressed="false">Activity diagram</button>
+                      <button id="storyboardPreviewBtn" type="button" aria-pressed="true">Simulate</button>
+                    </div>
+                    <div id="storyboardTransitions" class="storyboard-transitions" role="group" aria-label="Storyboard transitions"></div>
+                    <span id="storyboardLoopStatus" class="hidden" role="status"></span>
+                  </div>
                 </div>
               </div>
               <div id="preview" class="preview"><img id="detailImage" alt="" /></div>
+              <div id="storyboardDiagram" class="storyboard-diagram hidden">
+                <p id="storyboardDiagramStatus" role="status"></p>
+                <img id="storyboardDiagramImage" class="hidden" alt="Storyboard activity diagram" />
+              </div>
               <div id="animPlayer" class="anim-player hidden">
                 <div class="anim-row">
                   <strong id="animCharacterLabel" style="font-size:13px;"></strong>
@@ -935,6 +986,7 @@ internal static class Program
               <div class="rail-label">Storyboard sequence</div>
               <h2 id="sequencePanelName"></h2>
               <div id="sequencePanelMeta" class="detail-path"></div>
+              <ul id="storyboardDiagnostics" class="storyboard-diagnostics hidden"></ul>
             </div>
             <div>
               <h2 id="detailName"></h2>
@@ -967,6 +1019,7 @@ internal static class Program
     backBtn.innerHTML = icons.grid;
     prevBtn.innerHTML = icons.prev;
     nextBtn.innerHTML = icons.next;
+    storyboardRestartBtn.innerHTML = icons.reload;
 
     const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
     function assetReviewSetTheme(theme) {
@@ -1012,6 +1065,13 @@ internal static class Program
     let animTimer = null;
     let sequenceReview = null;
     let sequenceFrameIndex = 0;
+    // 2026-11-23: FR-ASSETREVIEW-019, AC-review-navigation. Traverse frame IDs and retain review history.
+    let sequenceHistory = [];
+    let sequenceLoops = [];
+    let sequenceBreakFrameId = null;
+    let storyboardView = 'preview';
+    let diagramRequest = null;
+    let diagramUrl = null;
     let reviewMode = 'assets';
 
     async function init() {
@@ -1103,7 +1163,8 @@ internal static class Program
         sequenceMatchesFilter(seq) &&
         (!q || seq.name.toLowerCase().includes(q) ||
           String(seq.id || '').toLowerCase().includes(q) ||
-          (seq.frames || []).some(frame => frame.toLowerCase().includes(q))));
+          (seq.frames || []).some(frame => frame.toLowerCase().includes(q)) ||
+          (seq.graph?.transitions || []).some(edge => edge.label?.toLowerCase().includes(q))));
     }
 
     function sequenceStats(seq) {
@@ -1226,7 +1287,172 @@ internal static class Program
     function hideSequenceChrome() {
       sequenceBar.classList.add('hidden');
       sequencePanel.classList.add('hidden');
+      storyboardRestartBtn.classList.add('hidden');
       detailView.classList.remove('sequence-mode');
+      storyboardDiagram.classList.add('hidden');
+      preview.classList.remove('hidden');
+      prevBtn.disabled = nextBtn.disabled = approveBtn.disabled = refineBtn.disabled = false;
+      resetStoryboardDiagram();
+    }
+
+    function resetStoryboardDiagram() {
+      diagramRequest?.abort();
+      diagramRequest = null;
+      if (diagramUrl) URL.revokeObjectURL(diagramUrl);
+      diagramUrl = null;
+      storyboardDiagramImage.removeAttribute('src');
+      storyboardDiagramImage.classList.add('hidden');
+      storyboardDiagramStatus.textContent = '';
+    }
+
+    async function loadStoryboardDiagram() {
+      if (!sequenceReview || diagramRequest || diagramUrl) return;
+      if (sequenceReview.graph?.diagnostics.length) {
+        storyboardDiagramStatus.textContent = 'Resolve the manifest errors to render the activity diagram.';
+        return;
+      }
+
+      const request = new AbortController();
+      diagramRequest = request;
+      storyboardDiagramStatus.textContent = 'Rendering activity diagram…';
+      try {
+        const response = await fetch(`/api/storyboards/${encodeURIComponent(sequenceReview.id)}/diagram`, { signal: request.signal });
+        const content = response.ok ? await response.blob() : await response.text();
+        if (request.signal.aborted) return;
+        if (!response.ok) {
+          storyboardDiagramStatus.textContent = content || 'PlantUML could not render this activity diagram.';
+          return;
+        }
+        diagramUrl = URL.createObjectURL(content);
+        storyboardDiagramImage.src = diagramUrl;
+        storyboardDiagramImage.classList.remove('hidden');
+        storyboardDiagramStatus.textContent = '';
+      } catch {
+        if (!request.signal.aborted)
+          storyboardDiagramStatus.textContent = 'PlantUML could not render this activity diagram.';
+      } finally {
+        if (diagramRequest === request) diagramRequest = null;
+      }
+    }
+
+    function setStoryboardView(view) {
+      storyboardView = view;
+      const diagram = view === 'diagram';
+      preview.classList.toggle('hidden', diagram);
+      storyboardDiagram.classList.toggle('hidden', !diagram);
+      storyboardDiagramBtn.classList.toggle('active', diagram);
+      storyboardPreviewBtn.classList.toggle('active', !diagram);
+      storyboardDiagramBtn.setAttribute('aria-pressed', String(diagram));
+      storyboardPreviewBtn.setAttribute('aria-pressed', String(!diagram));
+      if (diagram) loadStoryboardDiagram();
+    }
+
+    function activeStoryboardGraph() {
+      const graph = sequenceReview?.graph;
+      return graph && graph.diagnostics.length === 0 ? graph : null;
+    }
+
+    /**
+     * Finds frames reachable along Next and Branch transitions, optionally walking them backwards.
+     * 2026-11-23: FR-ASSETREVIEW-021, TR-ASSETREVIEW-STORYBOARD-003, AC-loop-break.
+     */
+    function reachableStoryboardFrames(graph, start, reverse = false) {
+      const neighbors = new Map();
+      for (const edge of graph.transitions) {
+        if (edge.kind === 'loop') continue;
+        const source = reverse ? edge.toFrameId : edge.fromFrameId;
+        const target = reverse ? edge.fromFrameId : edge.toFrameId;
+        if (!neighbors.has(source)) neighbors.set(source, []);
+        neighbors.get(source).push(target);
+      }
+      const reached = new Set([start]);
+      const pending = [start];
+      while (pending.length) {
+        for (const target of neighbors.get(pending.pop()) || []) {
+          if (reached.has(target)) continue;
+          reached.add(target);
+          pending.push(target);
+        }
+      }
+      return reached;
+    }
+
+    /**
+     * Follows an authored edge and remembers each loop still containing the destination.
+     * 2026-11-23: FR-ASSETREVIEW-021, AC-step-previews, AC-branch-buttons, AC-loop-break.
+     */
+    function followStoryboardTransition(edge) {
+      const graph = activeStoryboardGraph();
+      const target = graph.nodes.findIndex(node => node.id === edge.toFrameId);
+      const loops = sequenceLoops.filter(loop => loop.edge !== edge && loop.frames.has(edge.toFrameId));
+      if (edge.kind === 'loop') {
+        let loop = sequenceLoops.find(active => active.edge === edge);
+        if (!loop) {
+          const reached = reachableStoryboardFrames(graph, edge.toFrameId);
+          const returns = reachableStoryboardFrames(graph, edge.fromFrameId, true);
+          loop = { edge, frames: new Set([...reached].filter(id => returns.has(id))) };
+        }
+        loops.push(loop);
+      }
+      showSequenceFrame(target, { loops });
+    }
+
+    /**
+     * Uses a loop on the current frame or the most recently entered active loop.
+     * 2026-11-23: FR-ASSETREVIEW-021, AC-loop-break.
+     */
+    function storyboardLoopToBreak(graph, frameId) {
+      if (!frameId || sequenceBreakFrameId === frameId) return null;
+      return graph.transitions.find(edge => edge.kind === 'loop' && edge.fromFrameId === frameId)
+        || sequenceLoops.at(-1)?.edge;
+    }
+
+    /**
+     * Leaves a loop through Next or shows the forward choices at its final frame.
+     * 2026-11-23: FR-ASSETREVIEW-021, AC-loop-break.
+     */
+    function breakStoryboardLoop(graph, loop) {
+      const exit = graph.transitions.find(edge => edge.fromFrameId === loop.fromFrameId && edge.kind === 'next');
+      if (exit) {
+        followStoryboardTransition(exit);
+        return;
+      }
+      const boundary = graph.nodes.findIndex(node => node.id === loop.fromFrameId);
+      const loops = sequenceLoops.filter(active =>
+        active.edge.fromFrameId !== loop.fromFrameId && active.frames.has(loop.fromFrameId));
+      showSequenceFrame(boundary, { loops, breakFrameId: loop.fromFrameId });
+    }
+
+    function renderStoryboardTransitions(graph) {
+      storyboardTransitions.replaceChildren();
+      storyboardLoopStatus.classList.add('hidden');
+      const frame = graph?.nodes[sequenceFrameIndex];
+      if (!frame) return;
+      const exitedLoop = sequenceBreakFrameId === frame.id;
+      let hasBranch = false;
+      for (const edge of graph.transitions) {
+        if (edge.fromFrameId !== frame.id || edge.kind === 'next' || (exitedLoop && edge.kind === 'loop')) continue;
+        if (edge.kind === 'branch') hasBranch = true;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.kind = edge.kind;
+        button.textContent = edge.label;
+        button.title = edge.kind === 'loop' ? `Loop to ${edge.toFrameId}` : `Branch to ${edge.toFrameId}`;
+        button.onclick = () => followStoryboardTransition(edge);
+        storyboardTransitions.append(button);
+      }
+      const loop = storyboardLoopToBreak(graph, frame.id);
+      if (loop) {
+        const button = document.createElement('button');
+        button.id = 'storyboardBreakBtn';
+        button.type = 'button';
+        button.textContent = 'Break';
+        button.onclick = () => breakStoryboardLoop(graph, loop);
+        storyboardTransitions.append(button);
+      } else if (exitedLoop) {
+        storyboardLoopStatus.textContent = hasBranch ? 'Choose an exit.' : 'Loop ended here.';
+        storyboardLoopStatus.classList.remove('hidden');
+      }
     }
 
     function paintAsset(asset) {
@@ -1256,13 +1482,28 @@ internal static class Program
     function renderSequenceChrome() {
       const frames = sequenceReview.frames || [];
       const stats = sequenceStats(sequenceReview);
+      const graph = activeStoryboardGraph();
       sequenceBar.classList.remove('hidden');
       sequencePanel.classList.remove('hidden');
+      storyboardRestartBtn.classList.remove('hidden');
+      storyboardRestartBtn.disabled = frames.length === 0;
       detailView.classList.add('sequence-mode');
       sequenceBarTitle.textContent = sequenceReview.name;
-      sequenceBarHint.textContent = 'Left/Right or Up/Down move within this sequence. Esc returns to the storyboard list.';
+      sequenceBarHint.textContent = graph
+        ? 'Choose a labeled path or use Next. Previous retraces visited frames.'
+        : 'Left/Right or Up/Down move within this sequence. Esc returns to the storyboard list.';
       sequencePanelName.textContent = sequenceReview.name;
-      sequencePanelMeta.textContent = `Frame ${sequenceFrameIndex + 1} of ${frames.length} · ${stats.approved} approved · ${stats.refinements} refinement`;
+      sequencePanelMeta.textContent = frames.length
+        ? `Frame ${sequenceFrameIndex + 1} of ${frames.length} · ${stats.approved} approved · ${stats.refinements} refinement`
+        : 'No readable frames';
+      storyboardDiagnostics.replaceChildren();
+      for (const issue of sequenceReview.graph?.diagnostics || []) {
+        const item = document.createElement('li');
+        item.textContent = `${issue.manifestPath}:${issue.line} — ${issue.message}`;
+        storyboardDiagnostics.append(item);
+      }
+      storyboardDiagnostics.classList.toggle('hidden', storyboardDiagnostics.childElementCount === 0);
+      renderStoryboardTransitions(graph);
       sequenceStrip.innerHTML = '';
       frames.forEach((framePath, index) => {
         const asset = assets.find(a => a.path === framePath);
@@ -1270,8 +1511,9 @@ internal static class Program
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'seq-frame' + (index === sequenceFrameIndex ? ' active' : '');
-        btn.title = framePath;
-        btn.setAttribute('aria-label', `Frame ${index + 1}: ${framePath}`);
+        const frameId = sequenceReview.graph?.nodes[index]?.id;
+        btn.title = frameId ? `${frameId}: ${framePath}` : framePath;
+        btn.setAttribute('aria-label', `Frame ${index + 1}: ${btn.title}`);
         if (index === sequenceFrameIndex) btn.setAttribute('aria-current', 'true');
         const pip = decision ? `<span class="pip ${decision}"></span>` : '';
         btn.innerHTML = `<img src="${assetUrl(framePath)}" alt=""><span class="seq-index">${index + 1}</span>${pip}`;
@@ -1282,53 +1524,80 @@ internal static class Program
       renderStoryboards();
     }
 
-    function showSequenceFrame(index) {
+    /**
+     * Displays the wireframe for the new step and preserves the prior visit for Previous.
+     * 2026-11-23: FR-ASSETREVIEW-021, AC-step-previews, AC-loop-break.
+     */
+    function showSequenceFrame(index, { remember = true, view = 'preview', loops = [], breakFrameId = null } = {}) {
       const frames = sequenceReview?.frames || [];
-      if (!frames.length) return;
-      sequenceFrameIndex = ((index % frames.length) + frames.length) % frames.length;
-      const framePath = frames[sequenceFrameIndex];
-      const match = assets.findIndex(a => a.path === framePath);
-      if (match >= 0) selected = match;
+      const frameIndex = frames.length ? ((index % frames.length) + frames.length) % frames.length : -1;
+      const changed = frameIndex !== sequenceFrameIndex || loops.length || sequenceLoops.length
+        || breakFrameId !== sequenceBreakFrameId;
+      if (remember && activeStoryboardGraph() && changed) {
+        sequenceHistory.push({ index: sequenceFrameIndex, loops: sequenceLoops, breakFrameId: sequenceBreakFrameId });
+      }
+      sequenceFrameIndex = frameIndex;
+      sequenceLoops = loops;
+      sequenceBreakFrameId = breakFrameId;
+      selected = assets.findIndex(asset => asset.path === frames[frameIndex]);
       renderSequenceFrame();
+      setStoryboardView(view);
     }
 
     function renderSequenceFrame() {
       const frames = sequenceReview?.frames || [];
       const framePath = frames[sequenceFrameIndex];
-      if (!framePath) return;
       stopAnimationTimer();
       activeAnimSet = null;
       activeSequence = null;
       animPlayer.classList.add('hidden');
-      prevBtn.title = 'Previous frame in sequence';
-      nextBtn.title = 'Next frame in sequence';
+      const graph = activeStoryboardGraph();
+      const frame = graph?.nodes[sequenceFrameIndex];
+      prevBtn.title = graph ? 'Previous visited frame' : 'Previous frame in sequence';
+      nextBtn.title = 'Next storyboard step';
+      prevBtn.disabled = graph ? sequenceHistory.length === 0 : frames.length === 0;
+      nextBtn.disabled = graph ? !graph.transitions.some(edge => edge.fromFrameId === frame?.id && edge.kind === 'next') : frames.length === 0;
       title.textContent = sequenceReview.name;
       const asset = assets.find(a => a.path === framePath);
       if (asset) {
         selected = assets.indexOf(asset);
         paintAsset(asset);
       } else {
-        detailImage.src = assetUrl(framePath);
-        detailImage.alt = framePath.split('/').pop();
-        detailName.textContent = framePath.split('/').pop();
-        detailPath.textContent = framePath;
-        detailStatus.textContent = 'Missing';
+        if (framePath) detailImage.src = assetUrl(framePath);
+        else detailImage.removeAttribute('src');
+        detailImage.alt = framePath?.split('/').pop() || '';
+        detailName.textContent = detailImage.alt;
+        detailPath.textContent = framePath || '';
+        detailStatus.textContent = framePath ? 'Missing' : 'No frame';
         detailStatus.className = 'status';
         comment.value = '';
       }
-      assetCount.textContent = `${sequenceFrameIndex + 1} / ${frames.length}`;
+      approveBtn.disabled = refineBtn.disabled = !asset;
+      assetCount.textContent = frames.length ? `${sequenceFrameIndex + 1} / ${frames.length}` : '';
       renderSequenceChrome();
       applyPreviewSettings();
     }
 
     function navigateSequence(delta) {
+      const graph = activeStoryboardGraph();
+      if (graph) {
+        if (delta < 0) {
+          const previous = sequenceHistory.pop();
+          if (previous) showSequenceFrame(previous.index, { ...previous, remember: false });
+        } else {
+          const current = graph.nodes[sequenceFrameIndex];
+          const next = graph.transitions.find(edge => edge.fromFrameId === current?.id && edge.kind === 'next');
+          if (next) followStoryboardTransition(next);
+        }
+        return;
+      }
       const frames = sequenceReview?.frames || [];
       if (!frames.length) return;
       showSequenceFrame(sequenceFrameIndex + delta);
     }
 
-    function openSequence(seq, focus) {
-      if (!seq || !(seq.frames || []).length) return;
+    function openSequence(seq, focus, view = seq?.graph ? 'diagram' : 'preview') {
+      if (!seq || (!(seq.frames || []).length && !seq.graph)) return;
       if (reviewMode !== 'storyboards') {
         reviewMode = 'storyboards';
         applyReviewMode();
@@ -1336,15 +1605,17 @@ internal static class Program
       let index = 0;
       if (typeof focus === 'number' && focus >= 0 && focus < seq.frames.length) index = focus;
       else if (typeof focus === 'string') {
-        const found = seq.frames.indexOf(focus);
+        const found = seq.graph ? seq.graph.nodes.findIndex(node => node.id === focus) : seq.frames.indexOf(focus);
         if (found >= 0) index = found;
       }
       const same = sequenceReview && sequenceReview.id === seq.id && focus == null && !detailView.classList.contains('hidden');
       if (same) return;
+      resetStoryboardDiagram();
       sequenceReview = seq;
+      sequenceHistory = [];
       gridView.classList.add('hidden');
       detailView.classList.remove('hidden');
-      showSequenceFrame(index);
+      showSequenceFrame(index, { remember: false, view });
     }
 
     function openDetail(i) {
@@ -1544,6 +1815,8 @@ internal static class Program
       const wasDetail = !detailView.classList.contains('hidden');
       const activeSequenceId = sequenceReview ? sequenceReview.id : null;
       const activeFrameIndex = sequenceReview ? sequenceFrameIndex : 0;
+      const activeFrameId = sequenceReview?.graph?.nodes[activeFrameIndex]?.id;
+      const activeStoryboardView = storyboardView;
       reloadBtn.disabled = true;
       reloadBtn.innerHTML = `${icons.reload}<span>Reloading</span>`;
       try {
@@ -1565,15 +1838,15 @@ internal static class Program
         const restoredSequence = reviewMode === 'storyboards' && activeSequenceId
           ? sequences.find(seq => seq.id === activeSequenceId)
           : null;
-        if (wasDetail && restoredSequence && (restoredSequence.frames || []).length) {
+        if (wasDetail && restoredSequence) {
           sequenceReview = null;
-          openSequence(restoredSequence, activeFrameIndex);
+          openSequence(restoredSequence, activeFrameId ?? activeFrameIndex, activeStoryboardView);
           toast.textContent = `Reloaded ${assets.length} assets.`;
           return;
         }
 
         sequenceReview = null;
-        if (wasDetail && selected >= 0) {
+        if (wasDetail && !activeSequenceId && selected >= 0) {
           gridView.classList.add('hidden');
           detailView.classList.remove('hidden');
           renderDetail();
@@ -1712,6 +1985,8 @@ internal static class Program
       if (reviewMode === 'storyboards' && sequenceReview) {
         const frames = sequenceReview.frames || [];
         ctx += `; sequence=${sequenceReview.name}; sequenceId=${sequenceReview.id}; frame=${sequenceFrameIndex + 1}/${frames.length}`;
+        const frameId = sequenceReview.graph?.nodes[sequenceFrameIndex]?.id;
+        if (frameId) ctx += `; frameId=${frameId}`;
       }
       return ctx;
     }
@@ -1768,6 +2043,12 @@ internal static class Program
     };
     reloadBtn.onclick = reloadAll;
     clearReviewsBtn.onclick = clearReviewsExceptApprovals;
+    storyboardDiagramBtn.onclick = () => setStoryboardView('diagram');
+    storyboardPreviewBtn.onclick = () => setStoryboardView('preview');
+    storyboardRestartBtn.onclick = () => {
+      sequenceHistory = [];
+      showSequenceFrame(0, { remember: false });
+    };
     prevBtn.onclick = () => navigate(-1);
     nextBtn.onclick = () => navigate(1);
     approveBtn.onclick = () => submit('approved');

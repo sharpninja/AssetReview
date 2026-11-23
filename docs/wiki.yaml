@@ -2,58 +2,79 @@ schema: mcp-wiki-export/v1
 home:
   document: home
 documents:
-- id: home
-  title: Home
-  source: generated:home
-  target: Home.md
-  platforms:
-  - github
-  - azure
-- id: functional
-  title: Functional Requirements
-  source: generated:functional
-  target: Functional-Requirements.md
-  platforms:
-  - github
-  - azure
-- id: technical
-  title: Technical Requirements
-  source: generated:technical
-  target: Technical-Requirements.md
-  platforms:
-  - github
-  - azure
-- id: testing
-  title: Testing Requirements
-  source: generated:testing
-  target: Testing-Requirements.md
-  platforms:
-  - github
-  - azure
-- id: mapping
-  title: TR per FR Mapping
-  source: generated:mapping
-  target: TR-per-FR-Mapping.md
-  platforms:
-  - github
-  - azure
-- id: matrix
-  title: Requirements Matrix
-  source: generated:matrix
-  target: Requirements-Matrix.md
-  platforms:
-  - github
-  - azure
+  - id: home
+    title: Home
+    source: generated:home
+    target: Home.md
+    platforms:
+      - github
+      - azure
+  - id: functional
+    title: Functional Requirements
+    source: generated:functional
+    target: Functional-Requirements.md
+    platforms:
+      - github
+      - azure
+  - id: technical
+    title: Technical Requirements
+    source: generated:technical
+    target: Technical-Requirements.md
+    platforms:
+      - github
+      - azure
+  - id: testing
+    title: Testing Requirements
+    source: generated:testing
+    target: Testing-Requirements.md
+    platforms:
+      - github
+      - azure
+  - id: mapping
+    title: TR per FR Mapping
+    source: generated:mapping
+    target: TR-per-FR-Mapping.md
+    platforms:
+      - github
+      - azure
+  - id: matrix
+    title: Requirements Matrix
+    source: generated:matrix
+    target: Requirements-Matrix.md
+    platforms:
+      - github
+      - azure
+  - id: project-readme
+    title: AssetReview Overview
+    source: README.md
+    target: AssetReview-Overview.md
+    platforms:
+      - github
+      - azure
+  - id: tool-guide
+    title: AssetReview Tool Guide
+    source: src/AssetReview.Tool/README.md
+    target: AssetReview-Tool-Guide.md
+    platforms:
+      - github
+      - azure
+  - id: requirement-baseline
+    title: AssetReview Requirement Baseline
+    source: docs/requirements/Asset-Review-Requirements.md
+    target: AssetReview-Requirement-Baseline.md
+    platforms:
+      - github
+      - azure
 navigation:
-- document: home
-  children: &o0 []
-- document: functional
-  children: *o0
-- document: technical
-  children: *o0
-- document: testing
-  children: *o0
-- document: mapping
-  children: *o0
-- document: matrix
-  children: *o0
+  - document: home
+  - document: functional
+  - document: technical
+  - document: testing
+  - document: mapping
+  - document: matrix
+  - title: Project Documentation
+    path: Project
+    children:
+      - document: project-readme
+      - document: tool-guide
+      - document: requirement-baseline

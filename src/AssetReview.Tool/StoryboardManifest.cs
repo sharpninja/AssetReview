@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace SharpNinja.AssetReview.Tool;
@@ -7,6 +8,8 @@ namespace SharpNinja.AssetReview.Tool;
 /// Reads explicit storyboard sequences from <c>_manifest.md</c>.
 /// A sequence is an ATX heading of the form <c>Sequence: Name</c> or <c>Storyboard: Name</c>
 /// followed by backtick-wrapped frame paths, in order, until the next heading.
+/// 2026-11-23: FR-ASSETREVIEW-018 and TR-ASSETREVIEW-STORYBOARD-001, AC-authored-transitions,
+/// AC-roundtrip-and-legacy, and AC-diagnostics support graph sections and preserve their authored body.
 /// </summary>
 internal static class StoryboardManifest
 {
@@ -30,38 +33,30 @@ internal static class StoryboardManifest
     {
         var sequences = new List<RawStoryboard>();
         RawBuilder? current = null;
+        string[] sourceLines = manifestText.Split('\n');
 
-        foreach (string line in ContentLines(manifestText))
+        foreach (StoryboardManifestLine line in ContentLines(manifestText))
         {
-            if (TryReadHeading(line, out bool isSequenceHeading, out string name, out string? explicitId))
+            if (TryReadHeading(line.Text, out bool isSequenceHeading, out string name, out string? explicitId))
             {
                 if (current is not null)
-                {
-                    sequences.Add(current.Build());
-                    current = null;
-                }
-
-                if (isSequenceHeading)
-                    current = new RawBuilder(name, explicitId);
+                    sequences.Add(current.Build(sourceLines, line.Number));
+                current = isSequenceHeading ? new RawBuilder(name, explicitId, line.Number) : null;
                 continue;
             }
 
-            if (current is null)
-                continue;
-
-            foreach (string path in ExtractAssetPaths(line))
-                current.Frames.Add(path);
+            current?.Lines.Add(line);
         }
 
         if (current is not null)
-            sequences.Add(current.Build());
+            sequences.Add(current.Build(sourceLines, sourceLines.Length + 1));
 
         return sequences;
     }
 
     internal static IReadOnlyList<StoryboardSequence> Load(ReviewOptions options, IReadOnlyList<string> manifestFiles)
     {
-        var pending = new List<(RawStoryboard Sequence, string ManifestDirectory)>();
+        var pending = new List<(RawStoryboard Sequence, string ManifestPath, string ManifestDirectory)>();
         foreach (string manifestFile in manifestFiles)
         {
             string? directory = Path.GetDirectoryName(manifestFile);
@@ -79,13 +74,22 @@ internal static class StoryboardManifest
             }
 
             foreach (RawStoryboard sequence in Parse(text))
-                pending.Add((sequence, directory));
+                pending.Add((sequence, manifestFile, directory));
         }
 
         var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var resolved = new List<StoryboardSequence>(pending.Count);
-        foreach ((RawStoryboard sequence, string directory) in pending)
+        foreach ((RawStoryboard sequence, string manifestPath, string directory) in pending)
         {
+            if (sequence.Graph is { } definition)
+            {
+                StoryboardGraph graph = definition.Resolve(options, manifestPath, directory);
+                string graphId = AllocateId(usedIds, sequence.ExplicitId ?? Slug(sequence.Name));
+                var graphFrames = graph.Nodes.Select(node => node.Path).ToArray();
+                resolved.Add(new StoryboardSequence(graphId, sequence.Name, graphFrames) { Graph = graph });
+                continue;
+            }
+
             var frames = new List<string>(sequence.FramePaths.Count);
             foreach (string framePath in sequence.FramePaths)
             {
@@ -109,6 +113,9 @@ internal static class StoryboardManifest
     /// </summary>
     internal static IEnumerable<string> ExtractAssetPaths(string line)
     {
+        if (StoryboardGraphDefinition.IsTransitionLine(line))
+            yield break;
+
         int start = 0;
         while (start < line.Length)
         {
@@ -182,6 +189,14 @@ internal static class StoryboardManifest
         sb.AppendLine();
         foreach (RawStoryboard sequence in sequences)
         {
+            if (sequence.AuthoredGraphLines is { } graphLines)
+            {
+                foreach (string line in graphLines)
+                    sb.AppendLine(line);
+                sb.AppendLine();
+                continue;
+            }
+
             sb.Append("### Sequence: ");
             sb.Append(sequence.Name);
             if (!string.IsNullOrEmpty(sequence.ExplicitId))
@@ -244,13 +259,16 @@ internal static class StoryboardManifest
         return true;
     }
 
-    private static IEnumerable<string> ContentLines(string manifestText)
+    private static IEnumerable<StoryboardManifestLine> ContentLines(string manifestText)
     {
-        string withoutComments = CommentRegex.Replace(manifestText, string.Empty);
+        // Keep one newline for each line inside a comment so diagnostics use the authored line numbers.
+        string withoutComments = CommentRegex.Replace(manifestText, match => new string('\n', match.Value.Count(c => c == '\n')));
         bool inFence = false;
         char fenceChar = '\0';
+        int lineNumber = 0;
         foreach (string raw in withoutComments.Split('\n'))
         {
+            lineNumber++;
             string line = raw.TrimEnd('\r');
             string trimmed = line.TrimStart();
             if (trimmed.StartsWith("```", StringComparison.Ordinal) || trimmed.StartsWith("~~~", StringComparison.Ordinal))
@@ -274,19 +292,40 @@ internal static class StoryboardManifest
             if (inFence)
                 continue;
 
-            yield return line;
+            yield return new StoryboardManifestLine(lineNumber, line);
         }
     }
 
-    private sealed class RawBuilder(string name, string? explicitId)
+    private sealed class RawBuilder(string name, string? explicitId, int headingLine)
     {
-        public string Name { get; } = name;
-        public string? ExplicitId { get; } = explicitId;
-        public List<string> Frames { get; } = [];
-        public RawStoryboard Build() => new(Name, ExplicitId, Frames.ToArray());
+        public List<StoryboardManifestLine> Lines { get; } = [];
+
+        public RawStoryboard Build(string[] sourceLines, int nextHeadingLine)
+        {
+            var frames = Lines.SelectMany(line => ExtractAssetPaths(line.Text)).ToArray();
+            var graph = StoryboardGraphDefinition.Parse(Lines, headingLine);
+            if (graph is null)
+                return new RawStoryboard(name, explicitId, frames);
+
+            int sectionEnd = nextHeadingLine - 1;
+            while (sectionEnd > headingLine && string.IsNullOrWhiteSpace(sourceLines[sectionEnd - 1]))
+                sectionEnd--;
+            var graphLines = sourceLines[(headingLine - 1)..sectionEnd].Select(line => line.TrimEnd('\r')).ToArray();
+            return new RawStoryboard(name, explicitId, frames) { Graph = graph, AuthoredGraphLines = graphLines };
+        }
     }
 }
 
-internal sealed record RawStoryboard(string Name, string? ExplicitId, IReadOnlyList<string> FramePaths);
+/// <summary>A parsed storyboard section before resolving frame files relative to the manifest.</summary>
+internal sealed record RawStoryboard(string Name, string? ExplicitId, IReadOnlyList<string> FramePaths)
+{
+    internal StoryboardGraphDefinition? Graph { get; init; }
+    internal IReadOnlyList<string>? AuthoredGraphLines { get; init; }
+}
 
-internal sealed record StoryboardSequence(string Id, string Name, IReadOnlyList<string> Frames);
+/// <summary>A storyboard with its ordered frames and optional explicit transition graph.</summary>
+internal sealed record StoryboardSequence(string Id, string Name, IReadOnlyList<string> Frames)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StoryboardGraph? Graph { get; init; }
+}

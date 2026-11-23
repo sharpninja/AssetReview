@@ -463,7 +463,7 @@
           "xunit.v3.runner.common": "[3.2.2]"
         }
       },
-      "SharpNinja.AssetReview.Tool": {
+      "assetreview.tool": {
         "type": "Project",
         "dependencies": {
           "Avalonia": "[12.0.5, )",

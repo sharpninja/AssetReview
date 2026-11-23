@@ -70,5 +70,8 @@ cache/
 
 mcp.db
 
+# QBrain export cache. The server's wiki ZIP is tracked under docs/requirements.
+/docs/Project/wiki/
+
 # NUKE transient logs
 .nuke/temp/

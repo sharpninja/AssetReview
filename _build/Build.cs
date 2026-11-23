@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Text.Json;
 using System.Xml.Linq;
 using Nuke.Common;
 using Nuke.Common.IO;
@@ -21,7 +23,9 @@ class Build : NukeBuild
 
     AbsolutePath SolutionFile => RootDirectory / "AssetReview.sln";
     AbsolutePath AssetReviewToolProject => RootDirectory / "src" / "AssetReview.Tool" / "AssetReview.Tool.csproj";
+    AbsolutePath AssetReviewLauncherProject => RootDirectory / "src" / "AssetReview.Launcher" / "AssetReview.Launcher.csproj";
     AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts" / "nuke";
+    AbsolutePath ToolPayloadDirectory => ArtifactsDirectory / "tool-payloads";
     AbsolutePath LocalToolPackagesDirectory => ArtifactsDirectory / "local-packages";
     AbsolutePath LocalToolNuGetConfigFile => LocalToolPackagesDirectory / "nuget.config";
     AbsolutePath DotNetGlobalToolsDirectory => (AbsolutePath)Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) / ".dotnet" / "tools";
@@ -84,15 +88,31 @@ class Build : NukeBuild
             DotNet($"test \"{SolutionFile}\" --configuration {Configuration} --no-build --verbosity minimal");
         });
 
+    /// <summary>
+    /// Publishes each supported application and packages it beside one portable .NET tool launcher.
+    /// 2026-11-23: FR-ASSETREVIEW-020 and TR-ASSETREVIEW-PACKAGING-001, AC-single-package
+    /// and AC-platform-verification require the same package to carry Windows and Linux payloads.
+    /// </summary>
     Target PackAssetReviewTool => _ => _
         .DependsOn(CalculateVersion)
         .Executes(() =>
         {
             CleanDirectory(LocalToolPackagesDirectory);
-            DotNet($"restore \"{AssetReviewToolProject}\"");
+            CleanDirectory(ToolPayloadDirectory);
+            string[] runtimes = XDocument.Load(AssetReviewToolProject).Descendants("RuntimeIdentifiers").Single().Value
+                .Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            string version = VersionMsBuildArgs();
+            DotNet($"restore \"{AssetReviewToolProject}\" /p:UseAppHost=false");
+            foreach (string runtime in runtimes)
+            {
+                DotNet($"publish \"{AssetReviewToolProject}\" --configuration {Configuration} --runtime {runtime} " +
+                    $"--self-contained false --no-restore /p:UseAppHost=false --output \"{ToolPayloadDirectory / runtime}\" {version}");
+            }
+
+            DotNet($"restore \"{AssetReviewLauncherProject}\"");
             DotNet(
-                $"pack \"{AssetReviewToolProject}\" --configuration {Configuration} --no-restore " +
-                $"--output \"{LocalToolPackagesDirectory}\" {VersionMsBuildArgs()}");
+                $"pack \"{AssetReviewLauncherProject}\" --configuration {Configuration} --no-restore " +
+                $"--output \"{LocalToolPackagesDirectory}\" /p:AssetReviewPayloadRoot=\"{ToolPayloadDirectory}\" {version}");
             var packagePath = AssetReviewToolPackagePath();
             if (!File.Exists(packagePath))
             {
@@ -104,9 +124,43 @@ class Build : NukeBuild
                     packagePath);
             }
 
+            VerifyToolPackage(packagePath, runtimes);
             WriteLocalToolNuGetConfig();
             Console.WriteLine($"AssetReview tool package: {packagePath} (GitVersion SemVer {ResolvedPackageVersion})");
         });
+
+    /// <summary>Checks the launcher entry point and the dependency target of every payload before deployment.</summary>
+    static void VerifyToolPackage(string path, IReadOnlyList<string> runtimes)
+    {
+        using var package = ZipFile.OpenRead(path);
+        const string settingsFile = "DotnetToolSettings.xml";
+        var settingsEntry = package.Entries.Single(entry => entry.FullName.EndsWith($"/any/{settingsFile}", StringComparison.Ordinal));
+        string packageRoot = settingsEntry.FullName[..^settingsFile.Length];
+        using var settingsStream = settingsEntry.Open();
+        var command = XDocument.Load(settingsStream).Descendants("Command").Single();
+        const string launcher = "AssetReview.Launcher.dll";
+        if ((string?)command.Attribute("Name") != AssetReviewToolCommandName ||
+            (string?)command.Attribute("EntryPoint") != launcher || package.GetEntry(packageRoot + launcher) is null)
+        {
+            throw new InvalidOperationException("The package does not contain the portable asset-review launcher.");
+        }
+
+        foreach (string runtime in runtimes)
+        {
+            string payload = $"{packageRoot}apps/{runtime}/AssetReview.Tool";
+            var dependencies = package.GetEntry(payload + ".deps.json");
+            if (dependencies is null || package.GetEntry(payload + ".dll") is null || package.GetEntry(payload + ".runtimeconfig.json") is null)
+                throw new InvalidOperationException($"The package is missing the {runtime} AssetReview application.");
+
+            using var dependencyStream = dependencies.Open();
+            using var dependencyManifest = JsonDocument.Parse(dependencyStream);
+            string? runtimeTarget = dependencyManifest.RootElement.GetProperty("runtimeTarget").GetProperty("name").GetString();
+            if (runtimeTarget?.EndsWith($"/{runtime}", StringComparison.Ordinal) != true)
+                throw new InvalidOperationException($"The {runtime} application has invalid dependency target '{runtimeTarget}'.");
+        }
+
+        Console.WriteLine($"Verified asset-review launcher and payloads for {string.Join(", ", runtimes)}.");
+    }
 
     Target DeployAssetReviewTool => _ => _
         .DependsOn(PackAssetReviewTool)

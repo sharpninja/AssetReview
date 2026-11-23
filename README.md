@@ -2,18 +2,23 @@
 
 Standalone local asset and wireframe approval review tool for PNG and SVG folders.
 
-Originally extracted from [BBCrawler](https://github.com/) (`AssetReview.Tool`) into its own repository so other projects can consume the `asset-review` .NET tool without depending on the BBCrawler solution.
+Originally extracted from BBCrawler so other projects can use the `asset-review` .NET tool independently.
 
 ## Tool
 
-Package id: `SharpNinja.AssetReview.Tool`  
-Command: `asset-review`  
-Target framework: `net10.0` (Avalonia + ASP.NET Core WebView hybrid desktop host)
+- Package ID `SharpNinja.AssetReview.Tool`
+- Command `asset-review`
+- Target framework `net10.0` (Avalonia and ASP.NET Core)
+
+One `SharpNinja.AssetReview.Tool` package contains Windows (`win-x64`, `win-arm64`) and glibc-based Linux (`linux-x64`, `linux-arm64`) applications. The `asset-review` launcher detects the current OS and .NET process architecture, then starts the matching app in the caller's working directory. Install the .NET 10 and ASP.NET Core 10 runtimes for your platform.
 
 ```powershell
+dotnet tool install --global SharpNinja.AssetReview.Tool
 asset-review
 asset-review --asset-root artifacts/art-approval/full-refresh --title "Asset Review"
 ```
+
+The default opens the embedded desktop window. Use `--external-browser` to open the system browser, or `--server-only` to print the local URL without opening a window. See `asset-review --help` for the workspace, port, and feedback options.
 
 Feedback is written as JSON Lines to `.asset-review/feedback.jsonl` by default.
 Each line records the asset path, decision, comment, preview context, and UTC timestamp.
@@ -31,7 +36,7 @@ Scan the current directory (or `--asset-root`) for supported PNG/SVG media and w
 
 ```powershell
 asset-review --generate-manifest
-asset-review --generate-manifest --asset-root path\to\assets
+asset-review --generate-manifest --asset-root path/to/assets
 ```
 
 The generated file lists each asset as a backtick-wrapped relative path (e.g. `` `subdir/icon.png` ``) so subsequent `asset-review` runs prefer the manifest over a full directory scan.
@@ -57,9 +62,30 @@ A sequence is an ATX heading (`##` through `######`) whose text starts with `Seq
 - `boards/boss/02.svg`
 ```
 
-`{#id}` is an optional stable id. Without it, the app derives an id from the name. Listing a path twice keeps a hold frame. Missing files are skipped, and a sequence with no readable frames is left out of the UI. Headings inside HTML comments or fenced code blocks are not sequences.
+`{#id}` is an optional stable sequence ID. Without it, the app derives an ID from the name. In an ordered sequence, listing a path twice keeps a hold frame. Missing files are skipped, and an ordered sequence with no readable frames is left out of the UI. Headings inside HTML comments or fenced code blocks are ignored.
 
 Frames listed only under a sequence are still part of the asset catalog, so single-asset review is unchanged. Opening a card reviews that asset and steps through the filtered asset list.
+
+### Branches and loops in a manifest
+
+Give each frame a `{#frame-id}` and indent its transitions beneath it. The first frame is the entry point. `Branch` adds a labeled choice, `Loop` adds a labeled return, and `Next` connects to the next frame explicitly. A frame with no outgoing transitions ends that path.
+
+```markdown
+### Sequence: Escape the gate {#escape}
+- `boards/gate.png` {#gate}
+  - Branch: Take the stairs -> stairs
+  - Branch: Use the lift -> lift
+- `boards/stairs.png` {#stairs}
+  - Next: exit
+- `boards/lift.png` {#lift}
+  - Loop: Try the gate again -> gate
+  - Next: exit
+- `boards/exit.png` {#exit}
+```
+
+Frame IDs are case-insensitive within each storyboard. Each starts with a letter or digit and may contain letters, digits, hyphens, and underscores. Separate IDs can refer to the same image. Every frame must be reachable from the entry point through `Next` or `Branch`, and a `Loop` can return to its own frame or to a frame with a forward path to it. A frame can have one `Next` transition and any number of labeled transitions.
+
+`--generate-manifest` preserves these definitions when it refreshes the asset list. The asset index reports invalid graphs with the manifest path and line number. Plain sequences of frame paths still use their listed order.
 
 ### Review mode
 
@@ -67,7 +93,11 @@ The toolbar **Review** control switches **Assets** and **Storyboards**.
 
 **Assets** is single-asset review. The sidebar lists folders and the grid lists files. Previous/next and the arrow keys follow the filtered asset list. Combat animation playback still runs when you open a combat asset this way.
 
-**Storyboards** lists sequences instead of individual files. The status filter keeps sequences that are still open, fully approved, or marked for refinement. Opening a sequence reviews that sequence as one unit: previous/next and the arrow keys stay on its frames, and the filmstrip jumps to a frame. Approve and Request refinement still apply to the current frame. Esc or Back returns to the storyboard list. Switching **Review** leaves the open detail view and shows the list for the mode you picked.
+**Storyboards** lists sequences with their review status. A branched storyboard opens in **Activity diagram**, where PlantUML shows all frames, branch labels, and loop paths. Select **Simulate** to see the wireframe for each step in the previewer. Use the **Previous**, **Next**, and **Restart storyboard** icons to retrace your path, advance, or return to the first frame. Branch buttons show their manifest labels. Choose the labeled loop button to repeat, or select **Break** to take the loop's `Next` exit or see its labeled exit choices. A loop with no exit ends on its final wireframe. The filmstrip jumps to a frame. Linear storyboards open directly in the previewer. Approve and Request refinement apply to the current frame, and graph feedback records its frame ID. Esc or Back returns to the storyboard list.
+
+### Local PlantUML renderer
+
+AssetReview renders activity diagrams locally using a [PlantUML JAR](https://plantuml.com/download), Java, and [Graphviz](https://plantuml.com/graphviz-dot). Set `ASSET_REVIEW_PLANTUML_JAR` to the JAR path or place `plantuml.jar` in the `AssetReview` directory under your OS local application data directory. On Linux, that is typically `~/.local/share/AssetReview`. AssetReview finds Java through `JAVA_HOME`, a `jre` subdirectory in that same directory, or `PATH`. The storyboard view shows a message when rendering is unavailable and keeps frame review accessible.
 
 ## Build (Nuke)
 
@@ -84,20 +114,19 @@ On Unix: `./build.sh` with the same targets.
 | Target | Purpose |
 |--------|---------|
 | `Compile` | Restore + build `AssetReview.sln` (default) |
-| `Test` | Build, then run the SharpNinja.aiUnit requirement tests |
-| `PackAssetReviewTool` | Pack `SharpNinja.AssetReview.Tool` nupkg under `artifacts/nuke/local-packages` |
+| `Test` | Build, then run the unit and SharpNinja.aiUnit requirement tests |
+| `PackAssetReviewTool` | Publish all four platform applications and verify the single launcher package under `artifacts/nuke/local-packages` |
 | `DeployAssetReviewTool` | Pack, then uninstall-if-present and `dotnet tool install --global` from the local feed |
 | `PublishToNuGet` | Pack, then `dotnet nuget push` to nuget.org (or `--nuget-source`) |
 
 ## Tests
 
-Requirement catalog: [`docs/requirements/Asset-Review-Requirements.md`](docs/requirements/Asset-Review-Requirements.md).
+See the [requirement baseline and test coverage](https://github.com/sharpninja/AssetReview/blob/main/docs/requirements/Asset-Review-Requirements.md) and the [tool guide](https://github.com/sharpninja/AssetReview/blob/main/src/AssetReview.Tool/README.md).
 
-SharpNinja.aiUnit tests in `tests/AssetReview.AiUnit.Tests` launch `asset-review` and drive the review page for each captured requirement. Screenshots are written to `artifacts/aiunit/asset-review/<REQUIREMENT-ID>.png` (override with `ASSET_REVIEW_SCREENSHOT_DIR`).
+SharpNinja.aiUnit tests in `tests/AssetReview.AiUnit.Tests` launch `asset-review` and drive the review page. Scenario drivers write screenshots to `artifacts/aiunit/asset-review/<REQUIREMENT-ID>.png` (override with `ASSET_REVIEW_SCREENSHOT_DIR`). The storyboard tests also exercise manifest round-tripping, diagram rendering and recovery, and the wireframe shown at each simulator step.
 
 ```powershell
-dotnet test AssetReview.sln
-./build.sh Test
+./build.ps1 Test
 ```
 
 The suite uses headless Chromium (`ASSET_REVIEW_BROWSER` or `CHROME_PATH`, otherwise `google-chrome` on `PATH`). It does not need a display: UI tests pass `--server-only` and open the same page the embedded Avalonia host loads. The default `--embedded` window is not started here.
@@ -118,7 +147,7 @@ $env:NUGET_API_KEY = "<your-nuget.org-key>"
 .\build.ps1 PublishToNuGet --nuget-source https://api.nuget.org/v3/index.json
 ```
 
-Versioning is driven by GitVersion (`GitVersion.yml`, next-version `0.2.0`, ContinuousDeployment on `main`/`master`). Nuke `CalculateVersion` runs `dotnet-gitversion` and passes that SemVer into pack, deploy, and publish. On `main`, Continuous Deployment keeps the same SemVer until a git tag; the package version is that SemVer, not a value hardcoded in the project file.
+GitVersion reads `GitVersion.yml`, where the current `next-version` is `0.2.1` and `main`/`master` use Continuous Deployment. Nuke's `CalculateVersion` target passes the resulting SemVer into pack, deploy, and publish.
 
 ```powershell
 dotnet tool restore

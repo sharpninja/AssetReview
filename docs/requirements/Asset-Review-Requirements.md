@@ -1,8 +1,8 @@
 # Asset Review requirements
 
-Captured requirements for the `asset-review` tool. This repository did not include a requirements document or MCP workspace docs, so each item below is derived from `README.md`, `src/AssetReview.Tool/README.md`, and the review host CLI and page (manifest review, `--generate-manifest`, zoom and scroll, and in-flight combat storyboard sequences).
+This baseline records the original `asset-review` requirements and their sources. QBrain holds the effective requirements, acceptance criteria, and mappings, including later storyboard and packaging work. See the [project README](https://github.com/sharpninja/AssetReview/blob/main/README.md) for current usage.
 
-SharpNinja.aiUnit tests in `tests/AssetReview.AiUnit.Tests` load these rows through `AiUnitScenarioCatalog` and drive `asset-review` for each id. Screenshots land in `artifacts/aiunit/asset-review/`.
+SharpNinja.aiUnit tests in `tests/AssetReview.AiUnit.Tests` load scenario files through `AiUnitScenarioCatalog`. `RequirementCatalogTests` checks that every scenario has a row below and a driver. The scenario drivers save screenshots under `artifacts/aiunit/asset-review/`.
 
 | Id | Title | Requirement | Source |
 | --- | --- | --- | --- |
@@ -27,4 +27,15 @@ SharpNinja.aiUnit tests in `tests/AssetReview.AiUnit.Tests` load these rows thro
 | TR-ASSETREVIEW-002 | Validate port | A non-integer or out-of-range --port value exits with code 2 and an error on stderr. | TryParsePort |
 | TR-ASSETREVIEW-003 | Skip non-review paths | Manifest generation and the review index skip non-image files and debug, screenshot, crawl-shot, and test-output paths, while still listing artifacts/art-approval. | EnumerateAssets and IsExcludedDebugAssetPath |
 
-The embedded Avalonia window is the default `--embedded` host. The headless suite does not open that window; it serves the same page with `--server-only` and exercises `assetReviewSetTheme`, which the window calls after navigation.
+QBrain uses descriptive technical IDs. The original scenario IDs remain source aliases for `TR-ASSETREVIEW-FEEDBACK-002` (`TR-ASSETREVIEW-001`), `TR-ASSETREVIEW-CLI-002` (`TR-ASSETREVIEW-002`), and `TR-ASSETREVIEW-MANIFEST-002` (`TR-ASSETREVIEW-003`).
+
+The embedded Avalonia window is the default `--embedded` host. The headless suite serves the same page with `--server-only` and exercises `assetReviewSetTheme`, which the window calls after navigation.
+
+## Storyboard and package verification
+
+- `FR-ASSETREVIEW-018` and `TEST-ASSETREVIEW-001` cover authored graph loading, diagnostics, and manifest regeneration in `StoryboardGraphManifestTests`.
+- `FR-ASSETREVIEW-019` and `TEST-ASSETREVIEW-002` cover PlantUML activity diagrams, graph-based frame feedback, and renderer recovery in `StoryboardActivityTests`.
+- `FR-ASSETREVIEW-020` and `TEST-ASSETREVIEW-003` cover package layout and launcher dispatch. Nuke's `PackAssetReviewTool` checks the launcher and dependency metadata for the four included runtime targets. Run the package on the target host to verify dispatch, argument handling, working directory, and exit status.
+- `FR-ASSETREVIEW-021` and `TEST-ASSETREVIEW-004` cover simulator controls, labeled branches, loop repetition and exits, and which wireframe Chromium loads for each step in `StoryboardActivityTests`.
+
+Run the browser and unit suites with `./build.ps1 Test`. Set `ASSET_REVIEW_PLANTUML_JAR` to a local JAR to require actual diagram rendering in the storyboard tests.
